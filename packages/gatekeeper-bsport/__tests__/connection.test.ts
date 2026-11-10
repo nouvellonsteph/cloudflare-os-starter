@@ -31,6 +31,17 @@ async function connected() {
 }
 
 describe("owner-only connection authority", () => {
+  it("embeds the official square logo for both vendor and account without network requests", async () => {
+    const vendor = await entrypoints.GatekeeperVendor({}).describe();
+    const { user } = await connected();
+    expect((await user.describe()).avatar).toEqual(vendor.logo);
+    expect(vendor.logo?.url).toMatch(/^data:image\/png;base64,/);
+    const bytes = Uint8Array.from(atob(vendor.logo!.url.split(",")[1]), c => c.charCodeAt(0));
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    expect(Array.from(digest, b => b.toString(16).padStart(2, "0")).join("")).toBe("86a8f67856ec55ee0f390b26365c973f679b5a426a72919dc9606d5523a992af");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("exports the complete set of Worker entrypoints, without auto-provisioning", async () => {
     expect(Object.keys(main).toSorted()).toEqual(["BsportAccount", "BsportGatekeeper", "BsportUser", "BsportVerifier", "GatekeeperVendor", "default"]);
     const vendor = entrypoints.GatekeeperVendor({});

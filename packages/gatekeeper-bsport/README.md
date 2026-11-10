@@ -4,6 +4,12 @@ Wrapper-owned integration for **one production bsport company**. It does not edi
 `cloudflare-os/` submodule or replace the starter's custom example. It is opt-in under
 `gatekeepers.bsport` and builds in the starter workspace.
 
+The vendor logo and connected-account avatar use the official 256×256 bsport icon embedded in
+[`src/logo.ts`](src/logo.ts), with no external image requests. Source: the `apple-touch-icon`
+linked by [bsport's website](https://pro.bsport.io/),
+[`favicon-big.png`](https://cdn.prod.website-files.com/698617c87d83f488db5cae4d/6986188a088732a51f143fed_favicon-big.png).
+The asset remains bsport's trademark.
+
 ## Capabilities
 
 [`src/types.d.ts`](src/types.d.ts) is the agent-facing contract. Bind the whole company, one
