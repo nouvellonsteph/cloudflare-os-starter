@@ -1,0 +1,86 @@
+import { env } from "cloudflare:workers";
+import type { RpcStub } from "cloudflare:workers";
+import { runInDurableObject } from "cloudflare:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BsportEnv } from "../src/env.js";
+import type { BsportBookings, BsportCompanySession, BsportResource, BsportBooking } from "../src/types.js";
+import type { TestHooks } from "./worker.js";
+import { fixtures } from "./fixtures.js";
+import { subresources } from "../src/resources.js";
+
+const settings = env as BsportEnv & { TEST_HOOKS: DurableObjectNamespace<TestHooks> };
+beforeEach(() => vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("Unexpected network request in test."); })));
+afterEach(() => vi.unstubAllGlobals());
+async function rpcResult<T>(result: PromiseLike<T>): Promise<T> { return await result; }
+
+async function setup(suffix = "") {
+  const accountId = settings.BSPORT_ACCOUNTS.newUniqueId();
+  const account = settings.BSPORT_ACCOUNTS.get(accountId);
+  await runInDurableObject(account, (_instance, state) => { state.storage.kv.put("owner", {
+    email: "owner@example.com", subject: "owner-subject", company: 42, client: "test-client", franchisor: null,
+    issuer: settings.CF_ACCESS_ISS, audience: settings.CF_ACCESS_AUD,
+  }); });
+  const hooks = settings.TEST_HOOKS.get(settings.TEST_HOOKS.newUniqueId());
+  const session = await hooks.open(accountId.toString(), `bsport://production/companies/42${suffix}`);
+  return { account, hooks, session };
+}
+
+describe("real Gatekeeper session RPC", () => {
+  it("binds company, collection and record sessions, with per-read queue authorization", async () => {
+    const fetcher = vi.fn(async () => Response.json({ results: [fixtures.bookings], next_page: null }));
+    vi.stubGlobal("fetch", fetcher);
+    const { hooks, session } = await setup();
+    using company = session as RpcStub<BsportCompanySession>;
+    using collection = await company.bookings();
+    using cursor = await collection.list();
+    expect(await hooks.observations()).toEqual([]);
+    expect(fetcher).not.toHaveBeenCalled();
+    const entries = await cursor.next();
+    expect(entries![0].details).toMatchObject({ id: 1 });
+    expect(await hooks.observations()).toMatchObject([{ containsRestrictedData: true, subresources: subresources(42, "bookings", [1]) }]);
+    fetcher.mockImplementation(async () => Response.json(fixtures.bookings));
+    using child = entries![0].resource;
+    expect(await child.getDetails()).toMatchObject({ id: 1 });
+    expect(await cursor.next()).toBeNull();
+    expect(await hooks.observations()).toHaveLength(3);
+    const narrow = await setup("/bookings");
+    using bookings = narrow.session as RpcStub<BsportBookings>;
+    using record = await bookings.get(1);
+    expect(await record.getDetails()).toMatchObject({ id: 1 });
+    const single = await setup("/bookings/1");
+    using bound = single.session as RpcStub<BsportResource<BsportBooking>>;
+    expect(await bound.getDetails()).toMatchObject({ id: 1 });
+  });
+
+  it("denies disclosure, retries the same page, and revokes already minted children", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ results: [fixtures.bookings], next_page: null }));
+    vi.stubGlobal("fetch", fetcher);
+    const { account, hooks, session } = await setup("/bookings");
+    using collection = session as RpcStub<BsportBookings>;
+    using cursor = await collection.list();
+    using child = await collection.get(1);
+    await hooks.deny(true);
+    await expect(rpcResult(cursor.next())).rejects.toThrow("collaborator denied");
+    await hooks.deny(false);
+    const entries = await cursor.next();
+    entries![0].resource[Symbol.dispose]();
+    expect(fetcher.mock.calls.map(([url]) => new URL(String(url)).searchParams.get("page"))).toEqual(["1", "1"]);
+    await account.revoke();
+    await expect(rpcResult(child.getDetails())).rejects.toThrow("not authorized");
+    await expect(rpcResult(cursor.next())).rejects.toThrow("not authorized");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects malformed RPC arguments and nonexistent methods before provider I/O", async () => {
+    const fetcher = vi.fn(async () => { throw new Error("Unexpected provider call"); });
+    vi.stubGlobal("fetch", fetcher);
+    const { session } = await setup("/bookings");
+    using collection = session as RpcStub<BsportBookings>;
+    // Deliberately cross the RPC boundary with untyped input, as an untrusted caller can.
+    const untyped = collection as unknown as { get(id: unknown): Promise<unknown>; list(options: unknown): Promise<unknown>; customers(): Promise<unknown> };
+    for (const id of [null, {}, true, -1, "1/../../customers"]) await expect(rpcResult(untyped.get(id))).rejects.toThrow();
+    for (const options of [null, [], { method: "POST" }, { company_id: 43 }, { status: "wrong" }, { customerId: "1" }]) await expect(rpcResult(untyped.list(options))).rejects.toThrow();
+    await expect(rpcResult(untyped.customers())).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});

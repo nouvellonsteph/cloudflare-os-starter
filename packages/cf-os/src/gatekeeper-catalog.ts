@@ -13,6 +13,7 @@ import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import type { ProdWranglerConfig } from "./core/deployment-config.ts";
 import type { CatalogGatekeeper, ExcludedGatekeeper, GatekeeperCatalog } from "./core/gatekeepers.ts";
 import { BUILT_IN_GATEKEEPER_SLUGS } from "./core/naming.ts";
+import { BSPORT_VARS } from "./core/bsport.ts";
 
 /** Why a package's own config rules it out, or undefined when nothing does. */
 function unsupported(config: ProdWranglerConfig): string | undefined {
@@ -106,6 +107,23 @@ export async function loadCatalog(root: string): Promise<GatekeeperCatalog> {
     } catch (error) {
       exclude((error as Error).message);
     }
+  }
+  // Explicit registration: the pinned upstream catalogue cannot discover or build this package.
+  const bsportConfig = join(root, "packages/gatekeeper-bsport/wrangler.jsonc");
+  if (existsSync(bsportConfig)) {
+    if (offered.some(entry => entry.slug === "bsport")) throw new Error("Upstream now offers bsport; resolve the local registration collision before deployment.");
+    const errors: ParseError[] = [];
+    const config = parse(readFileSync(bsportConfig, "utf8"), errors, { allowTrailingComma: true }) as ProdWranglerConfig;
+    if (errors.length) throw new Error("packages/gatekeeper-bsport/wrangler.jsonc does not parse.");
+    offered.push({
+      slug: "bsport", packageDir: "packages/gatekeeper-bsport", packageName: "gatekeeper-bsport", workspace: "starter", auth: "api-key",
+      preinstall: false, singleton: true, config, readme: "packages/gatekeeper-bsport/README.md",
+      vars: BSPORT_VARS.map(name => ({ name, kind: "var", label: name })),
+      secrets: [{ name: "BSPORT_API_KEY", kind: "secret", label: "bsport API key", setupSteps: [
+        "This is not OAuth. One deployment-managed bsport key stays on this dedicated Worker. Never paste it into chat or deployment.jsonc.",
+        "Confirm the account and existing Worker identity before a human enters the key securely. Setting a Worker secret deploys a new version and needs separate production approval.",
+      ] }],
+    });
   }
   return { offered, excluded };
 }

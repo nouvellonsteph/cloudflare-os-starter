@@ -1,0 +1,25 @@
+{
+  "name": "gatekeeper-bsport",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": { "types:check": "tsc --noEmit", "test:run": "vp run --no-cache build:configurator && tsc -p tsconfig.test.json --noEmit && vitest run" },
+  "dependencies": {
+    "@gadgets/workshop-shared": "link:../../cloudflare-os/packages/workshop-shared",
+    "@gadgets/gatekeeper-kit": "link:../../cloudflare-os/packages/gatekeeper-kit",
+    "@gadgets/configurator-ui": "link:../../cloudflare-os/packages/configurator-ui",
+    "capnweb": "catalog:",
+    "capnweb-validate": "catalog:",
+    "jose": "6.1.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "catalog:",
+    "@gadgets/scripts": "link:../../cloudflare-os/scripts",
+    "@types/node": "26.1.0",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

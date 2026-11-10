@@ -13,6 +13,10 @@ export interface CatalogGatekeeper {
   packageDir: string;
   /** Its `package.json` name, which `vp run -F` builds it by. */
   packageName: string;
+  /** Wrapper-owned packages build in the starter workspace, never the pinned upstream workspace. */
+  workspace?: "starter";
+  /** Absent uses the upstream OAuth setup; api-key has no provider redirect URI. */
+  auth?: "api-key";
   /** Upstream's release preinstalls it on every hosted instance. */
   preinstall: boolean;
   /** Upstream allows one install per instance. */
@@ -103,7 +107,7 @@ export interface SecretSetup {
   /** Upstream's setup steps, or a generic one when it ships none. */
   steps: string[];
   /** The OAuth redirect URI to register with the provider. */
-  redirectUri: string;
+  redirectUri?: string;
   /** One `wrangler secret put` per secret input: the way to set them by hand, without `cf-os secrets`. */
   commands: { name: string; command: string }[];
   /** The console page, the steps and the redirect URI, as lines to print. Not the commands. */
@@ -127,7 +131,7 @@ export function secretSetup(
   const consoleUrl = entry.secrets.find((input) => input.consoleUrl)?.consoleUrl;
   const template = entry.secrets.find((input) => input.redirectUriTemplate)?.redirectUriTemplate;
   // Upstream's files write `{PUBLIC_BASE_URL}`; its type documents `$PUBLIC_BASE_URL`. Either way.
-  const redirectUri = template
+  const redirectUri = entry.auth === "api-key" ? undefined : template
     ? template.replace(/\{PUBLIC_BASE_URL\}|\$PUBLIC_BASE_URL/g, origin)
     : `${origin}/gatekeeper/${slug}/oauth`;
   const upstreamSteps = entry.secrets.flatMap((input) => input.setupSteps ?? []);
@@ -141,7 +145,7 @@ export function secretSetup(
   const lines = entry.secrets.length ? [
     ...(consoleUrl ? [`Console: ${consoleUrl}`] : []),
     ...steps.map((step, index) => `${index + 1}. ${step}`),
-    `Redirect URI: ${redirectUri}`,
+    ...(redirectUri ? [`Redirect URI: ${redirectUri}`] : []),
   ] : [];
   return { ...(consoleUrl ? { consoleUrl } : {}), steps, redirectUri, commands, lines };
 }

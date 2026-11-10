@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true, "types": ["./worker-configuration.d.ts", "@cloudflare/vitest-plugin/types"] },
+  "include": ["src", "__tests__"],
+  "exclude": ["dist", "node_modules", ".wrangler"]
+}

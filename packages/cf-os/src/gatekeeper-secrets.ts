@@ -209,7 +209,8 @@ export async function askAndSetSecrets(
       await askAndSetOne(ctx, deps, { config, catalog, slug, upload, origin, read: reads.get(slug) }, outcome);
     } catch (error) {
       if (!(error instanceof SecretUploadError || error instanceof CfError || error instanceof CfAuthError)) throw error;
-      ctx.out.log(`\nThe ${slug} Gatekeeper's OAuth credentials were not set: ${withRetry(ctx, error, slug)}`);
+      const credentials = catalog.offered.find(entry => entry.slug === slug)?.auth === "api-key" ? "API key" : "OAuth credentials";
+      ctx.out.log(`\nThe ${slug} Gatekeeper's ${credentials} were not set: ${withRetry(ctx, error, slug)}`);
       outcome.failed.push(slug);
     }
   }
@@ -252,7 +253,7 @@ async function askAndSetOne(
     return;
   }
   const setup = secretSetup(entry, slug, worker, origin, config.accountId);
-  ctx.out.log(`\nThe ${slug} Gatekeeper (${worker}) needs an OAuth app before anyone can connect it:\n` +
+  ctx.out.log(`\nThe ${slug} Gatekeeper (${worker}) needs ${entry.auth === "api-key" ? "a deployment-managed API key" : "an OAuth app"} before anyone can connect it:\n` +
     setup.lines.map((line) => `  ${line}`).join("\n"));
   if (!deps.prompter) {
     outcome.manual.push({
@@ -263,7 +264,7 @@ async function askAndSetOne(
     });
     return;
   }
-  const when = await deps.prompter.select(`Set the ${slug} Gatekeeper's OAuth credentials now?`, [
+  const when = await deps.prompter.select(`Set the ${slug} Gatekeeper's ${entry.auth === "api-key" ? "API key" : "OAuth credentials"} now?`, [
     { value: "now" as const, label: "Enter them now" },
     { value: "later" as const, label: `Later — ${secretsCommand(ctx, slug)}` },
   ], "now");
