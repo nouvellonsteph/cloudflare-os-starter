@@ -9,12 +9,33 @@ import { fixtures, INVOICE_ID } from "./fixtures.js";
 
 const settings = env as BsportEnv;
 describe("fixed, read-only provider boundary", () => {
+  // The test config intercepts outbound I/O, not global fetch or the client fetcher.
+  it("reads a page with native Workers fetch and its required receiver", async () => {
+    await expect(new BsportClient(settings).page("bookings", { pageSize: 1 }, 1)).resolves.toEqual({
+      records: [mapRecord("bookings", fixtures.bookings, 42)], next: null,
+    });
+  });
+
+  it("reads details with native Workers fetch and its required receiver", async () => {
+    await expect(new BsportClient(settings).details("bookings", 1)).resolves.toEqual(mapRecord("bookings", fixtures.bookings, 42));
+  });
+
+  it("verifies company and record access with native Workers fetch", async () => {
+    const client = new BsportClient(settings);
+    await expect(client.verifyAccess(subresources(42))).resolves.toBeUndefined();
+    await expect(client.verifyAccess(subresources(42, "bookings", [1]))).resolves.toBeUndefined();
+  });
+
+  it("rejects a native-fetch redirect without following it or disclosing its location", async () => {
+    await expect(new BsportClient(settings).details("bookings", 2)).rejects.toThrow(/^bsport read failed \(HTTP 302\)\.$/);
+  });
+
   it.each(Object.keys(COLLECTIONS) as Collection[])("GETs only the configured company's %s and maps its fields", async collection => {
     const fetcher = vi.fn<typeof fetch>(async (input, options) => {
       const url = new URL(String(input));
       expect(url.origin).toBe("https://public.production.bsport.io");
       expect(url.pathname).toBe(`/api/v2/management/${COLLECTIONS[collection][0]}/`);
-      expect(options?.method).toBe("GET"); expect(options?.redirect).toBe("error");
+      expect(options?.method).toBe("GET"); expect(options?.redirect).toBe("manual");
       const headers = new Headers(options?.headers);
       expect(headers.get("X-Api-Key")).toBe("fake-test-key");
       expect(headers.get("X-Client-ID")).toBe("test-client"); expect(headers.get("X-Company-ID")).toBe("42");
