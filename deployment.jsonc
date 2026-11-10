@@ -1,7 +1,7 @@
 {
   // Cloudflare account that owns every Worker and provisioned resource.
   // Find it: https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/
-  "accountId": "<CLOUDFLARE_ACCOUNT_ID>",
+  "accountId": "121287a0c6e6260ec930655e6b39a3a8",
 
   // The deployment's public origin, used for PUBLIC_BASE_URL and to scope Context data.
   // null derives it from workers.router.route.customDomain.
@@ -16,21 +16,21 @@
     // Owns the public URL and serves the frontend. Proxies /api and /blueprint-screenshot to the
     // Workshop, and /gatekeeper/<name> to the matching Gatekeeper.
     "router": {
-      "name": "<ROUTER_WORKER_NAME>",
+      "name": "corpoz-os",
 
       // Production: use a hostname in an active Cloudflare zone. Wrangler creates DNS and TLS.
       // Evaluation: replace this with "route": { "workersDev": true } and set publicBaseUrl above.
       // https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
-      "route": { "customDomain": "os.example.com" }
+      "route": { "customDomain": "os.corpoz.fit" }
     },
 
     // The Workshop backend. No public route: the router reaches it over a service binding.
-    "workshop": { "name": "<WORKSHOP_WORKER_NAME>" },
-    "context": { "name": "<CONTEXT_WORKER_NAME>" },
+    "workshop": { "name": "corpoz-os-backend" },
+    "context": { "name": "corpoz-os-gk-context" },
 
     // The Scheduler Gatekeeper, which gives agents scheduled and recurring work. Ambient like
     // the Context Gatekeeper
-    "scheduler": { "name": "<SCHEDULER_WORKER_NAME>" },
+    "scheduler": { "name": "corpoz-os-gk-scheduler" },
 
     // The Web Search Gatekeeper, which lets agents search the public web. Ambient too. It searches
     // through aiGateway.name below when that gateway is in this account, and through the account's
@@ -38,17 +38,34 @@
     // separately from models: load AI Gateway credits on the account, or store a Ceramic key
     // (alias "default") on the gateway it actually searches through, or every search fails.
     // See docs/customization.md#workers-and-routing.
-    "websearch": { "name": "<WEBSEARCH_WORKER_NAME>" },
+    "websearch": { "name": "corpoz-os-gk-websearch" },
 
-    "customGatekeeper": { "name": "<CUSTOM_GATEKEEPER_WORKER_NAME>" },
-    "errorReporter": { "name": "<ERROR_REPORTER_WORKER_NAME>" }
+    "customGatekeeper": { "name": "corpoz-os-gk-custom" },
+    "errorReporter": { "name": "corpoz-os-errors" }
   },
 
   // Optional upstream Gatekeepers (GitHub, Slack, ...), keyed by slug, each its own Worker:
   //   "github": { "name": "<router-name>-gk-github" }
   // `pnpm cf-os init` offers them; `pnpm cf-os secrets` sets their OAuth credentials.
   // Reference: docs/customization.md#optional-gatekeepers
-  "gatekeepers": {},
+  "gatekeepers": {
+    "bsport": {
+      "name": "corpoz-os-gk-bsport",
+      "vars": {
+        "BSPORT_COMPANY_ID": "4629",
+        "BSPORT_CLIENT_ID": "corpoz",
+        "BSPORT_OWNER_EMAIL": "stephane@corpoz.fit"
+      }
+    },
+    "cloudflare": { "name": "corpoz-os-gk-cloudflare" },
+    "github": { "name": "corpoz-os-gk-github" },
+    "google": { "name": "corpoz-os-gk-google" },
+    "mcp": { "name": "corpoz-os-gk-mcp" },
+    "mcpportal": {
+      "name": "corpoz-os-gk-mcpportal",
+      "vars": { "MCP_PORTAL_URL": "https://portal.corpoz.fit/mcp" }
+    }
+  },
 
   // This starter deploys Cloudflare Access mode. Cloudflare OS also supports built-in password
   // accounts and auth Gatekeeper sign-in; see the reference below before switching. The audience
@@ -58,9 +75,9 @@
   // "admins" gates /admin in every sign-in method.
   // Reference: docs/customization.md#sign-in-methods
   "access": {
-    "issuer": "https://<TEAM_NAME>.cloudflareaccess.com",
-    "audience": "<ACCESS_AUDIENCE>",
-    "admins": ["<ADMIN_EMAIL>"]
+    "issuer": "https://justalittlebyte.cloudflareaccess.com",
+    "audience": "e00892eaf8a00a4bbfe65f49f100cff35a69192bfd89cb47d2be43461bca9adf",
+    "admins": ["stephane@corpoz.fit"]
   },
 
   // Model catalog served through Cloudflare AI Gateway. Enabled by default: the Workshop reaches
@@ -73,7 +90,7 @@
     // Your account's AI Gateway. "default" is the one Cloudflare creates for the account.
     // Migrating from the hosted deploy? Use the gateway that flow created: "<instance>-ai"
     // (e.g. "cloudflareos-ai"), named after your instance. See docs/migrate-from-hosted.md.
-    "name": "default",
+    "name": "cloudflareos-corpoz-ai",
 
     // null reuses the top-level accountId. Set only if the gateway lives in another account --
     // that requires CF_AI_GATEWAY_API_TOKEN, since the binding cannot reach across accounts.
@@ -91,23 +108,22 @@
 
     // null: Wrangler provisions and remembers a KV namespace on first deploy.
     // string: bind an existing namespace by ID.
-    "kvNamespaceId": null
+    "kvNamespaceId": null,
 
     // Optional Git-compatible storage for Context collections. To enable it, add a comma after
     // kvNamespaceId and uncomment this object. Requires Artifacts account access.
-    // "artifacts": {
-    //   "enabled": true,
-    //   // Optional override; defaults to "gatekeeper-context-collections".
-    //   "namespace": "custom-context-collections"
-    // }
+    "artifacts": {
+      "enabled": true,
+      "namespace": "custom-context-collections"
+    }
   },
 
   // Displayed to agents when the example custom integration is enabled in /admin. false deploys none.
   // Reference: docs/customization.md#custom-gatekeepers
   "customGatekeeper": {
-    "enabled": true,
-    "name": "<ORGANIZATION_DISPLAY_NAME>",
-    "message": "<ORGANIZATION_GUIDANCE>"
+    "enabled": false,
+    "name": "corpoz",
+    "message": "This is corpoz's Cloudflare OS deployment."
   },
 
   // Explicit backend issue reports go to a private Worker that emits structured console errors.
@@ -132,7 +148,7 @@
   "observability": {
     "enabled": true,
     "headSamplingRate": 1,
-    "logs": { "invocationLogs": false },
-    "traces": { "enabled": false, "headSamplingRate": 0.1 }
+    "logs": { "invocationLogs": true },
+    "traces": { "enabled": true, "headSamplingRate": 1 }
   }
 }
