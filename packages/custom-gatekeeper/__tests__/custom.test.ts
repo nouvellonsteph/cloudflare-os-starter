@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as worker from "../src/index.js";
 import {
   CustomSessionImpl,
   describeCustomAccount,
@@ -6,6 +7,16 @@ import {
 } from "../src/custom.js";
 
 describe("custom-gatekeeper", () => {
+  it("exports only Worker entrypoints and Durable Object classes from the main module", () => {
+    expect(Object.keys(worker).toSorted()).toEqual([
+      "CustomAccount",
+      "CustomGatekeeper",
+      "CustomVerifier",
+      "GatekeeperVendor",
+      "default",
+    ]);
+  });
+
   it("describes an auto-provisioned singleton", () => {
     expect(describeCustomVendor()).toMatchObject({
       displayName: "Custom Gatekeeper",
