@@ -1,4 +1,9 @@
-export * from "./custom.js";
+export {
+  CustomAccount,
+  CustomGatekeeper,
+  CustomVerifier,
+  GatekeeperVendor,
+} from "./custom.js";
 
 export default {
   async fetch(): Promise<Response> {
