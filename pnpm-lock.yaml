@@ -148,6 +148,49 @@ importers:
         specifier: 'catalog:'
         version: 4.154.0(@cloudflare/workers-types@5.20261027.1)(@types/node@26.1.0)
 
+  packages/gatekeeper-bsport:
+    dependencies:
+      '@gadgets/configurator-ui':
+        specifier: link:../../cloudflare-os/packages/configurator-ui
+        version: link:../../cloudflare-os/packages/configurator-ui
+      '@gadgets/gatekeeper-kit':
+        specifier: link:../../cloudflare-os/packages/gatekeeper-kit
+        version: link:../../cloudflare-os/packages/gatekeeper-kit
+      '@gadgets/workshop-shared':
+        specifier: link:../../cloudflare-os/packages/workshop-shared
+        version: link:../../cloudflare-os/packages/workshop-shared
+      capnweb:
+        specifier: 'catalog:'
+        version: 0.12.0
+      capnweb-validate:
+        specifier: 'catalog:'
+        version: 0.3.0(capnweb@0.12.0)(esbuild@0.28.2)(rolldown@1.2.2)(rollup@4.62.4)(vite@7.3.6(@types/node@26.1.0)(lightningcss@1.33.0))
+      jose:
+        specifier: 6.1.3
+        version: 6.1.3
+    devDependencies:
+      '@cloudflare/vitest-plugin':
+        specifier: 'catalog:'
+        version: 1.4.9(@cloudflare/workers-types@5.20261108.1)(@types/node@26.1.0)(vitest@5.0.5)
+      '@gadgets/scripts':
+        specifier: link:../../cloudflare-os/scripts
+        version: link:../../cloudflare-os/scripts
+      '@types/node':
+        specifier: 26.1.0
+        version: 26.1.0
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vite:
+        specifier: 'catalog:'
+        version: 7.3.6(@types/node@26.1.0)(lightningcss@1.33.0)
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.5(@types/node@26.1.0)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(vite@7.3.6(@types/node@26.1.0)(lightningcss@1.33.0))
+      wrangler:
+        specifier: 'catalog:'
+        version: 4.154.0(@cloudflare/workers-types@5.20261108.1)(@types/node@26.1.0)
+
 packages:
 
   '@babel/code-frame@7.29.7':
@@ -1796,6 +1839,9 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
+  jose@6.1.3:
+    resolution: {integrity: sha512-0TpaTfihd4QMNwrz/ob2Bp7X04yuxJkjRGi4aKmOqwhov54i6u79oCv7T+C7lo70MKH6BesI3vscD1yb/yzKXQ==}
+
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
@@ -3357,6 +3403,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  jose@6.1.3: {}
 
   js-tokens@4.0.0: {}
 

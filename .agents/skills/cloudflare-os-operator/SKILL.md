@@ -103,6 +103,18 @@ Each optional Gatekeeper's OAuth secrets go on its own Worker (`gatekeepers.<slu
 
 Confirm this account selector against current Wrangler documentation. Confirm the account, existing Worker ownership, and Worker name immediately before presenting or running the interactive command. Setting a secret, with `secret put` or `cf-os secrets`, immediately deploys a new Worker version; require production approval, record its version ID, and verify it like any other deployment. Verify only that the secret name exists, never its value. If exposure is suspected, stop deployment and rotate or revoke the credential first.
 
+### bsport Integration
+
+The wrapper-owned `packages/gatekeeper-bsport` is opt-in via `gatekeepers.bsport`, separate from
+the custom example and pinned upstream. Follow its README for the approved private-only,
+read-only model and required non-secret company/client/owner configuration. Its Access issuer,
+audience and base URL are deployment-derived; `BSPORT_API_KEY` belongs only on its own Worker.
+`pnpm cf-os secrets bsport` uses an API-key prompt, not OAuth. Confirm company-versus-franchise
+credential type, owner identity, account and existing Worker ownership before separate approval
+for deployment, secret installation or live provider tests. Workspace sharing must not admit
+another connection. Local synthetic checks do not prove live provider permissions, field shape
+or the parent Cloudflare OS upgrade's migration/rollback safety.
+
 ### Trust Boundary
 
 Require explicit operator approval before changing any of these:

@@ -25,6 +25,7 @@ import type {
   ProdWranglerConfig,
 } from "./deployment-config.ts";
 import { testCatalog, testCatalogWithGoogle } from "../test-support.ts";
+import { loadCatalog } from "../gatekeeper-catalog.ts";
 
 const validConfig: DeploymentConfig = {
   accountId: "0123456789abcdef0123456789abcdef",
@@ -968,4 +969,40 @@ test("needs no catalog when no optional Gatekeeper is selected", () => {
   const unavailable = { offered: [], excluded: [], unavailable: "no submodule" };
   assert.doesNotThrow(() => validateGatekeepers(validConfig, unavailable));
   assert.doesNotThrow(() => validateGatekeepers(variant((c) => { c.gatekeepers = {}; }), unavailable));
+});
+
+const bsportVars = { BSPORT_COMPANY_ID: "42", BSPORT_CLIENT_ID: "test-client", BSPORT_OWNER_EMAIL: "owner@example.com" };
+
+test("builds bsport in the starter and derives its private route and Access realm", async () => {
+  const localCatalog = await loadCatalog(join(import.meta.dirname, "../../../.."));
+  const config = withGatekeepers({ bsport: { name: "acme-gk-bsport", vars: { ...bsportVars, BSPORT_FRANCHISOR_ID: "7" } } });
+  validateConfig(config);
+  validateGatekeepers(config, localCatalog);
+  const generated = generateConfigs(config, await baseConfigs(), localCatalog);
+  const bsport = generated.gatekeepers.bsport;
+  assert.deepEqual(bsport.vars, { ...bsportVars, BSPORT_FRANCHISOR_ID: "7", BASE_URL: "https://os.example.com/gatekeeper/bsport", CF_ACCESS_ISS: config.access.issuer, CF_ACCESS_AUD: config.access.audience });
+  assert.equal(bsport.workers_dev, false);
+  assert.equal(bsport.preview_urls, false);
+  assert.equal(bsport.routes, undefined);
+  assert.equal(bsport.account_id, config.accountId);
+  assert.deepEqual(bsport.migrations, [{ tag: "v1", new_sqlite_classes: ["BsportAccount", "BsportGatekeeper"] }]);
+  assert.equal(bsport.observability!.head_sampling_rate, config.observability.headSamplingRate);
+  assert.ok(!JSON.stringify(bsport).includes("BSPORT_API_KEY"));
+  assert.deepEqual(generated.router.services!.find(service => service.binding === "GATEKEEPER_BSPORT"), { binding: "GATEKEEPER_BSPORT", service: "acme-gk-bsport" });
+  assert.deepEqual(generated.workshop.services!.find(service => service.binding === "GATEKEEPER_BSPORT"), { binding: "GATEKEEPER_BSPORT", service: "acme-gk-bsport", entrypoint: "GatekeeperVendor" });
+  assert.ok(buildCommands(config, localCatalog).flat().some(command => command.args.join(" ") === "exec vp run -F gatekeeper-bsport --no-cache build"));
+  assert.equal(workerDir("gatekeepers.bsport", localCatalog), "packages/gatekeeper-bsport");
+  assert.ok(deployWaves(config)[0].includes("gatekeepers.bsport"));
+  assert.ok(generatedOutputs(generated).some(([id]) => id === "gatekeepers.bsport"));
+});
+
+test("refuses bsport secrets in vars, tenant ambiguity and Access overrides", () => {
+  for (const vars of [undefined, {}, { ...bsportVars, BSPORT_API_KEY: "synthetic-not-a-key" },
+    { ...bsportVars, CF_ACCESS_ISS: "https://elsewhere.example.com" }, { ...bsportVars, CF_ACCESS_AUD: "different" },
+    { ...bsportVars, BSPORT_COMPANY_ID: "042" }, { ...bsportVars, BSPORT_COMPANY_ID: "9007199254740992" },
+    { ...bsportVars, BSPORT_FRANCHISOR_ID: "0" }, { ...bsportVars, BSPORT_OWNER_EMAIL: "owner" },
+    { ...bsportVars, BSPORT_CLIENT_ID: "padded " }, { ...bsportVars, BSPORT_CLIENT_ID: "bad\r\nheader" },
+    { ...bsportVars, ORIGIN: "https://staging.example.com" }]) {
+    assert.throws(() => validateConfig(withGatekeepers({ bsport: { name: "acme-gk-bsport", vars } })), /gatekeepers.bsport.vars/);
+  }
 });

@@ -5,3 +5,4 @@ packages/*/.wrangler/
 packages/*/wrangler.prod.jsonc
 deployment.local.jsonc
 .cf-os/
+packages/gatekeeper-bsport/src/generated/

@@ -15,6 +15,7 @@ import type {
 } from "./deployment-config.ts";
 import type { CatalogGatekeeper, GatekeeperCatalog } from "./gatekeepers.ts";
 import { BUILT_IN_GATEKEEPER_SLUGS } from "./naming.ts";
+import { validateBsportVars } from "./bsport.ts";
 
 /**
  * Where each Worker's package lives, relative to the project root, keyed as `deployment.jsonc` keys
@@ -447,6 +448,7 @@ function validateGatekeeperEntries(config: DeploymentConfig): void {
     if (typeof name !== "string" || !name) {
       throw new Error(`gatekeepers.${slug}.name must be a Worker name.`);
     }
+    if (slug === "bsport") validateBsportVars(vars as Record<string, string> | undefined);
     if (vars === undefined) continue;
     if (!vars || typeof vars !== "object" || Array.isArray(vars)) {
       throw new Error(`gatekeepers.${slug}.vars must be an object of strings.`);
@@ -803,6 +805,7 @@ export function generateConfigs(
       ...(generated.ai && gateway && !gateway.crossAccount ? { CF_AI_GATEWAY: config.aiGateway.name } : {}),
       ...entry.vars,
       BASE_URL: `${origin}/gatekeeper/${slug}`,
+      ...(slug === "bsport" ? { CF_ACCESS_ISS: config.access.issuer.replace(/\/$/, ""), CF_ACCESS_AUD: config.access.audience } : {}),
     };
     gatekeepers[slug] = generated;
   }
@@ -872,7 +875,10 @@ export function buildCommands(config: DeploymentConfig, catalog: GatekeeperCatal
     // codegen (cloudflare-os/scripts/gatekeeper-configurator-vite-config.ts), and the outer
     // `--no-cache` reaches that dependency too -- measured: both run with "cache disabled". Their
     // wrangler `build.command` then runs capnweb-validate at deploy time, as Web Search's does.
-    ...gatekeeperSlugs(config).map((slug) => [{ args: submoduleBuild(offeredGatekeeper(catalog, slug).packageName) }]),
+    ...gatekeeperSlugs(config).map((slug) => {
+      const entry = offeredGatekeeper(catalog, slug);
+      return [{ args: (entry.workspace === "starter" ? ownBuild : submoduleBuild)(entry.packageName) }];
+    }),
     // Access mode is a build-time constant in the frontend bundle (`src/useAuth.ts`), so it is set
     // here rather than inherited: a bundle built under a different value is wrong, not just stale.
     [{ args: submoduleBuild("@gadgets/workshop-frontend"), env: { VITE_CF_ACCESS_MODE: "true" } }],

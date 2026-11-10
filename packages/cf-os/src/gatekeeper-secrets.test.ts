@@ -10,6 +10,8 @@ import {
 } from "./gatekeeper-secrets.ts";
 import { CANCEL, scriptedPrompter, testCatalog, testCatalogWithGitlab, testContext, type Step } from "./test-support.ts";
 import type { SpawnTool } from "./tools.ts";
+import { loadCatalog } from "./gatekeeper-catalog.ts";
+import { join } from "node:path";
 
 /** GitHub, which reads CLIENT_ID and CLIENT_SECRET, and Home Assistant, which reads none. */
 const config = {
@@ -94,6 +96,24 @@ test("uploads the values on wrangler secret bulk's stdin, never in argv, and con
   for (const where of [log, JSON.stringify(json), JSON.stringify(prompter!.asked), JSON.stringify(ran[0].args)]) {
     assert.ok(!where.includes(ID) && !where.includes(SECRET), `a secret value leaked into ${where}`);
   }
+});
+
+test("bsport uses one masked API-key prompt and stdin without an OAuth redirect", async () => {
+  const catalog = await loadCatalog(join(import.meta.dirname, "../../.."));
+  const bsportConfig = { ...config, gatekeepers: { bsport: { name: "acme-gk-bsport" } } };
+  const account: MemoryAccount = { workers: [{ name: "acme-gk-bsport" }] };
+  const client = memoryClient(account);
+  const { spawn, ran } = recordingSpawn(account);
+  const syntheticKey = "synthetic-bsport-secret-test-value";
+  const prompter = scriptedPrompter([["Set the bsport Gatekeeper's API key now?", "now"], ["bsport API key (BSPORT_API_KEY)", syntheticKey]]);
+  const harness = testContext({ root: "/project", prompter });
+  const outcome = await askAndSetSecrets(harness.ctx, { prompter, client, spawn }, { config: bsportConfig, catalog, slugs: ["bsport"], upload: "now" });
+  assert.deepEqual(outcome.set, [{ gatekeeper: "bsport", worker: "acme-gk-bsport", secrets: ["BSPORT_API_KEY"] }]);
+  assert.equal(prompter.asked[1].kind, "password");
+  assert.deepEqual(JSON.parse(ran[0].input!), { BSPORT_API_KEY: syntheticKey });
+  assert.match(harness.stderr(), /deployment-managed API key/);
+  assert.doesNotMatch(harness.stderr(), /Redirect URI:|needs an OAuth app/);
+  for (const output of [harness.stderr(), JSON.stringify(harness.json), JSON.stringify(prompter.asked), JSON.stringify(ran[0].args)]) assert.ok(!output.includes(syntheticKey));
 });
 
 test("asks only for the secrets the Worker lacks", async () => {

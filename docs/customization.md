@@ -105,6 +105,21 @@ Each one is an entry under `gatekeepers`, keyed by its slug:
   `check` warns while one is missing.
 - **Removing an entry unbinds it.** The next deploy drops its two bindings, so the Workshop stops offering it and users' connections to it disappear. Its Worker, and the Durable Objects holding its state, keep running unbound: the CLI never deletes a Worker. To delete it, `CLOUDFLARE_ACCOUNT_ID=your-account-id pnpm exec wrangler delete --name <its Worker name>`.
 
+#### Wrapper-owned bsport integration
+
+`packages/gatekeeper-bsport` adds an opt-in **read-only, connection-owner-only** bsport connector
+without modifying upstream or replacing the custom example. It reads bookings, classes, selected
+customer fields, subscriptions, catalogue products, customer-held passes and invoice metadata.
+The company, client and owner are non-secret `gatekeepers.bsport.vars`; one `BSPORT_API_KEY`
+Worker secret is managed centrally, never in configuration. Access issuer/audience and the
+Router URL are derived by the wrapper. No OAuth app or provider redirect URI is needed.
+
+See [the configuration template, private access policy and production approval checklist](../packages/gatekeeper-bsport/README.md).
+Sharing a workspace never grants another connection access. Configure nothing live and enter no
+credentials until the platform upgrade and separate deployment/secret-installation approvals are
+complete. Native per-Worker Workers Builds can be considered afterwards; adding this entry does
+not itself configure build triggers or deploy-on-push automation.
+
 ### Sign-in methods
 
 Cloudflare OS supports three ways to sign users in. This starter deploys Cloudflare Access.

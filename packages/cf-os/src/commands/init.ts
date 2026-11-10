@@ -715,7 +715,7 @@ interface Selected {
   worker: string;
   /** Whether the account already runs its Worker, which keeps its secrets. */
   live: boolean;
-  /** Whether it reads OAuth secrets. */
+  /** Whether it reads secrets (OAuth credentials or a deployment-managed API key). */
   oauth: boolean;
 }
 
@@ -745,25 +745,26 @@ function reportLiveGatekeepers(
   originFound: boolean,
 ): void {
   const origin = originFound ? publicOrigin(config) : UNKNOWN_ORIGIN;
-  if (!originFound && selected.some(({ oauth }) => oauth)) {
+  if (!originFound && selected.some(({ slug, worker, oauth }) => oauth && redirectUri(catalog, slug, worker, origin, config.accountId))) {
     ctx.out.log(`\nNo public origin was found for the instance, so ${UNKNOWN_ORIGIN} stands for it below. ` +
       `Set workers.router.route and publicBaseUrl in ${where}, then register each redirect URI with the ` +
       "real origin in its place.");
   }
   for (const { slug, worker, oauth } of selected.filter(({ live }) => live)) {
+    const redirect = oauth ? redirectUri(catalog, slug, worker, origin, config.accountId) : undefined;
     ctx.out.log(`\n${worker} already runs in the account and keeps its secrets: a deploy leaves them as they are. ` +
       "It does replace the Worker's plain vars, with the package's own, BASE_URL and " +
       `gatekeepers.${slug}.vars: copy any the Worker relies on (GITLAB_URL for a self-managed GitLab, ` +
       `MCP_PORTAL_URL for an MCP portal) into gatekeepers.${slug}.vars before deploying.` +
-      (oauth
-        ? ` Its OAuth app must list ${redirectUri(catalog, slug, worker, origin, config.accountId)} as a ` +
+      (redirect
+        ? ` Its OAuth app must list ${redirect} as a ` +
           "redirect URI, which follows the public origin: if the instance moves hostname, add the new one."
         : ""));
   }
 }
 
 /** The redirect URI Gatekeeper `slug`'s OAuth app registers (core/gatekeepers.ts `secretSetup`). */
-function redirectUri(catalog: GatekeeperCatalog, slug: string, worker: string, origin: string, accountId: string): string {
+function redirectUri(catalog: GatekeeperCatalog, slug: string, worker: string, origin: string, accountId: string): string | undefined {
   const entry = catalog.offered.find((candidate) => candidate.slug === slug)!;
   return secretSetup(entry, slug, worker, origin, accountId).redirectUri;
 }
@@ -781,8 +782,9 @@ function reportSecretsLater(
 ): void {
   const origin = originFound ? publicOrigin(config) : UNKNOWN_ORIGIN;
   for (const { slug, worker } of selected.filter(({ live, oauth }) => oauth && !live)) {
-    ctx.out.log(`\nAfter deploying, \`${secretsCommand(ctx, slug)}\` sets the ${slug} Gatekeeper's OAuth credentials ` +
-      `(redirect URI: ${redirectUri(catalog, slug, worker, origin, config.accountId)}).`);
+    const redirect = redirectUri(catalog, slug, worker, origin, config.accountId);
+    ctx.out.log(`\nAfter deploying, \`${secretsCommand(ctx, slug)}\` sets the ${slug} Gatekeeper's ` +
+      (redirect ? `OAuth credentials (redirect URI: ${redirect}).` : "deployment-managed API key."));
   }
 }
 

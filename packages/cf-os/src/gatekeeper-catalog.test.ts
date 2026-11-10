@@ -146,6 +146,24 @@ test("prints upstream's setup guidance and the redirect URI, and keeps the secre
   assert.deepEqual(secretSetup(homeassistant, "homeassistant", "acme-gk-homeassistant", "https://os.example.com", "0123456789abcdef0123456789abcdef").lines, []);
 });
 
+test("explicitly registers the wrapper bsport package with API-key setup, not OAuth", async () => {
+  const catalog = await loadCatalog(ROOT);
+  const bsport = catalog.offered.find(entry => entry.slug === "bsport")!;
+  assert.equal(bsport.workspace, "starter");
+  assert.equal(bsport.packageName, "gatekeeper-bsport");
+  assert.equal(bsport.packageDir, "packages/gatekeeper-bsport");
+  assert.equal(bsport.preinstall, false);
+  assert.equal(bsport.auth, "api-key");
+  assert.deepEqual(bsport.secrets.map(input => input.name), ["BSPORT_API_KEY"]);
+  assert.deepEqual(bsport.vars.map(input => input.name), ["BSPORT_COMPANY_ID", "BSPORT_CLIENT_ID", "BSPORT_OWNER_EMAIL"]);
+  const setup = secretSetup(bsport, "bsport", "acme-gk-bsport", "https://os.example.com", "0123456789abcdef0123456789abcdef");
+  assert.equal(setup.redirectUri, undefined);
+  assert.ok(setup.lines.every(line => !line.includes("Redirect URI:")));
+  assert.match(setup.lines.join("\n"), /Never paste it into chat or deployment.jsonc/);
+  assert.deepEqual(setup.commands.map(command => command.name), ["BSPORT_API_KEY"]);
+  assert.ok(setup.commands[0].command.endsWith("--name acme-gk-bsport"));
+});
+
 test("each var the starter asks for is one its Gatekeeper reads and upstream declares no input for", async () => {
   const catalog = await loadCatalog(ROOT);
   for (const [slug, inputs] of Object.entries(UNDECLARED_VARS)) {
