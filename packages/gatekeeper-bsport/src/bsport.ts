@@ -16,8 +16,8 @@ import { BsportClient, BsportError } from "./client.js";
 import { ReadContext, sessionFor, type Session } from "./sessions.js";
 import TYPES from "./types.txt";
 import CONFIGURATOR from "./generated/bsport-configurator-ui.txt";
+import { BSPORT_ICON } from "./logo.js";
 
-const ICON = { url: "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><text y="48" font-size="48">b</text></svg>') };
 const FLOW_TTL = 10 * 60 * 1000;
 type Props = { accountId: string };
 type BindingProps = Props & { resource: Resource };
@@ -171,7 +171,7 @@ export class BsportVerifier extends WorkerEntrypoint<BsportEnv, Props> implement
 export class BsportUser extends WorkerEntrypoint<BsportEnv, Props> implements GatekeeperUser {
   async describe(): Promise<AccountDescription> {
     await account(this.env, this.ctx.props.accountId).assertLive();
-    return { displayName: "bsport private read-only connection", avatar: ICON };
+    return { displayName: "bsport private read-only connection", avatar: BSPORT_ICON };
   }
   async getSupportedResources(): Promise<SupportedResource[]> {
     await account(this.env, this.ctx.props.accountId).assertLive();
@@ -236,7 +236,7 @@ export class BsportGatekeeper extends DurableObject<BsportEnv, BindingProps> imp
 @validateRpc()
 export class GatekeeperVendor extends WorkerEntrypoint<BsportEnv> {
   async describe(): Promise<VendorDescription> {
-    return { displayName: "bsport", url: "https://bsport.io", logo: ICON, providesAuth: false,
+    return { displayName: "bsport", url: "https://bsport.io", logo: BSPORT_ICON, providesAuth: false,
       tagline: "Private studio data, read-only", description: "Read bookings, classes, customers, subscriptions, passes and invoices. Only the deployment-approved owner can connect; sharing a workspace does not share these results." };
   }
   @skipRpcValidation()
