@@ -114,12 +114,18 @@ call or deployment is implied by a passing local check.
 
 `src/client.ts` is the only provider HTTP boundary. It constructs GET routes at
 `https://public.production.bsport.io/api/v2/management/` with `X-Api-Key`, `X-Client-ID`,
-`X-Company-ID`, and optional fixed `X-Franchisor-ID`. Redirects are rejected. Filters are
+`X-Company-ID`, and optional fixed `X-Franchisor-ID`. Fetch uses Workers-supported `redirect: "manual"`
+and rejects non-200 responses, including redirects, without following them. Filters are
 allowlisted, pages have at most 100 records (default 50), responses at most 2 MiB, and numeric
 page indices at most 100,000. Each request times out after 15 seconds and retries once only for
 502/503/504. Access probes deduplicate records, run at most four concurrent requests, stop scheduling
 on failure and settle all in-flight requests. Large historical observer sets can therefore be slow
 and consume provider quota; they are never silently truncated.
+
+The default HTTP fetcher is bound to `globalThis`: native Workers `fetch` rejects a client
+instance as its receiver. An incorrect receiver is sanitized as `bsport read unavailable.`,
+just like other transport exceptions; provider HTTP rejections instead report their status.
+Workers does not support `redirect: "error"`; that option also throws before sending a request.
 
 ```sh
 pnpm --filter gatekeeper-bsport test:run
@@ -129,7 +135,9 @@ pnpm test
 ```
 
 Both test entrypoints generate the CSP-hashed picker before testing. Tests run in workerd with
-synthetic identities and mocked provider/JWKS requests, and include actual faceted Gatekeeper,
+synthetic identities and mocked provider/JWKS requests. Native-fetch regression tests intercept
+outbound I/O without replacing `fetch`, exercising pages, details, access probes and redirect rejection; all
+other native outbound requests are rejected locally. Tests also include actual faceted Gatekeeper,
 session and approval-queue RPC paths. Expected RPC rejection tests can print workerd's exception
 diagnostics; Vitest still must finish without failed tests or unhandled-error reports. Never
 disable unhandled-error checking to make the suite pass.

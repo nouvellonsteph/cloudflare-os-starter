@@ -49,7 +49,8 @@ async function readJson(response: Response): Promise<unknown> {
 
 /** The only provider HTTP boundary: constructed, allowlisted GETs, fixed origin and tenant. */
 export class BsportClient {
-  constructor(readonly env: BsportEnv, readonly fetcher: typeof fetch = fetch) {}
+  /** Native Workers fetch requires the global receiver when called as a stored method. */
+  constructor(readonly env: BsportEnv, readonly fetcher: typeof fetch = fetch.bind(globalThis)) {}
 
   /** Internal live access probes; their data never crosses to an agent or into durable storage. */
   async verifyAccess(values: string[]): Promise<void> {
@@ -100,7 +101,8 @@ export class BsportClient {
     for (let attempt = 0; attempt < 2; attempt++) {
       let response: Response;
       try {
-        response = await this.fetcher(url, { method: "GET", headers, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15_000) });
+        // Workers supports manual, not error; reject redirects below without following them.
+        response = await this.fetcher(url, { method: "GET", headers, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(15_000) });
       } catch { throw new Error("bsport read unavailable."); }
       if (response.status !== 200) {
         await discardBody(response);
