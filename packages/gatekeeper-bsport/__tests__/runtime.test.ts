@@ -26,6 +26,36 @@ async function setup(suffix = "") {
 }
 
 describe("real Gatekeeper session RPC", () => {
+  it("resolves customer names through both lists and detail RPC when phone_number is absent", async () => {
+    const { phone_number: _phone, ...customer } = fixtures.customers;
+    const fetcher = vi.fn<typeof fetch>(async input => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/v2/management/clients/1/") return Response.json(customer);
+      expect(url.pathname).toBe("/api/v2/management/clients/");
+      return Response.json({ results: [customer], next_page: null });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { session, hooks } = await setup();
+    using company = session as RpcStub<BsportCompanySession>;
+    using customers = await company.customers();
+    for (const options of [{ ids: [1, 2], pageSize: 100 }, { pageSize: 1 }]) {
+      using cursor = await customers.list(options);
+      const page = await cursor.next();
+      expect(page).toHaveLength(1);
+      for (const entry of page ?? []) {
+        using _resource = entry.resource;
+        expect(entry.details).toMatchObject({ id: 1, firstName: "Alex", lastName: "Example", fullName: "Alex Example", phoneNumber: null });
+      }
+    }
+    using resource = await customers.get(1);
+    expect(await resource.getDetails()).toMatchObject({ id: 1, firstName: "Alex", lastName: "Example", fullName: "Alex Example", phoneNumber: null });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    const observations = await hooks.observations();
+    expect(observations).toHaveLength(3);
+    expect(observations.every(observation => observation.containsRestrictedData &&
+      subresources(42, "customers", [1]).every(value => observation.subresources?.includes(value)))).toBe(true);
+  });
+
   it("resolves the documented booking -> customer/class/purchased-pass -> product relationships", async () => {
     const records = new Map<string, object>([
       ["/bookings/1/", { ...fixtures.bookings, client_class_pass_id: 11 }],

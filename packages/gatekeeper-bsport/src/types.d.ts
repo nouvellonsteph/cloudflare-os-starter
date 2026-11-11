@@ -154,7 +154,10 @@ export interface BsportCustomer {
   id: number;
   /** Provider firstname / lastname / fullname; resolve a customerId here instead of displaying the numeric ID as a name. */
   firstName: string; lastName: string; fullName: string;
-  email: string | null; phoneNumber: string | null; joinedDate: string;
+  email: string | null;
+  /** Null when bsport omits phone_number because no phone is stored, or explicitly returns null. */
+  phoneNumber: string | null;
+  joinedDate: string;
   isArchived: boolean; referenceNumber: string; emailMarketingAccepted: boolean; smsMarketingAccepted: boolean;
   accountBalance: string | null; totalUnpaidAmount: string;
 }

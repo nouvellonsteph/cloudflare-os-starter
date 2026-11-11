@@ -71,6 +71,14 @@ and `fullname` become `firstName`, `lastName` and `fullName`. This customer ID i
 the integration's configured `BSPORT_CLIENT_ID` / `X-Client-ID` value. Callers use camelCase
 Gatekeeper fields and filters, not provider snake_case names.
 
+bsport omits `phone_number` when no phone is stored, even when requested in the list's `fields`.
+Both customer lists and detail reads normalize that absence to `phoneNumber: null`; explicit
+null, empty-string and stored phone values retain their meaning. Other missing or malformed
+customer fields still fail validation. A customer field mismatch reports only its fixed schema
+path, e.g. `Invalid bsport response. Invalid field: customers.joined_date.`, never the value or
+provider body. A generic invalid-response error alone is not evidence of a permission denial;
+non-200 provider responses are reported separately as `bsport read failed (HTTP <status>).`.
+
 ### ID → object lookup map
 
 In this table, `company` means an **already-granted** `BsportCompanySession` for the same

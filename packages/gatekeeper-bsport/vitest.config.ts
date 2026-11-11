@@ -1,21 +1,16 @@
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import capnwebValidate from "capnweb-validate/vite";
 import { defineConfig } from "vitest/config";
-import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
 import { fixtures } from "./__tests__/fixtures.js";
 
 export default defineConfig({
   plugins: [{
     name: "worker-text-modules",
     enforce: "pre",
-    resolveId(source, importer) {
-      // Preserve Text module paths before Vite follows types.txt's symlink to types.d.ts.
-      if (source.endsWith(".txt") && importer) return resolve(dirname(importer), source);
-    },
-    async load(id) {
-      // Match Wrangler's Text rule, not Vite's default asset-URL imports.
-      if (id.endsWith(".txt")) return `export default ${JSON.stringify(await readFile(id, "utf8"))};`;
+    async resolveId(source, importer) {
+      // Let Vite resolve filesystem and root-relative paths while preserving Text imports,
+      // including types.txt's symlink to types.d.ts, as source rather than asset URLs.
+      if (source.endsWith(".txt")) return this.resolve(`${source}?raw`, importer, { skipSelf: true });
     },
   }, capnwebValidate({ tsconfig: "./tsconfig.test.json" }), cloudflareTest({
     main: "./__tests__/worker.ts",
