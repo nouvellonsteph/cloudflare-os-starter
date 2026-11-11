@@ -3,7 +3,7 @@ import type { RpcStub } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BsportEnv } from "../src/env.js";
-import type { BsportBookings, BsportCompanySession, BsportResource, BsportBooking } from "../src/types.js";
+import type { BsportBookings, BsportCompanySession, BsportResource, BsportBooking, BsportCustomer } from "../src/types.js";
 import type { TestHooks } from "./worker.js";
 import { fixtures } from "./fixtures.js";
 import { subresources } from "../src/resources.js";
@@ -26,6 +26,95 @@ async function setup(suffix = "") {
 }
 
 describe("real Gatekeeper session RPC", () => {
+  it("resolves the documented booking -> customer/class/purchased-pass -> product relationships", async () => {
+    const records = new Map<string, object>([
+      ["/bookings/1/", { ...fixtures.bookings, client_class_pass_id: 11 }],
+      ["/clients/2/", { ...fixtures.customers, id: 2 }],
+      ["/classes/3/", { ...fixtures.classes, id: 3 }],
+      ["/client-class-passes/11/", { ...fixtures.customerClassPasses, id: 11, class_pass_id: 21 }],
+      ["/class-passes/21/", { ...fixtures.classPassProducts, id: 21 }],
+    ]);
+    const fetcher = vi.fn<typeof fetch>(async input => {
+      const url = new URL(String(input));
+      const record = records.get(url.pathname.replace("/api/v2/management", ""));
+      if (!record) throw new Error("Unexpected relationship lookup in test.");
+      return Response.json(record);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { session } = await setup();
+    using company = session as RpcStub<BsportCompanySession>;
+    using bookings = await company.bookings();
+    using bookingResource = await bookings.get(1);
+    const booking = await bookingResource.getDetails();
+    using customers = await company.customers();
+    using classes = await company.classes();
+    using customer = await customers.get(booking.customerId);
+    using scheduledClass = await classes.get(booking.classId);
+    const [profile, classDetails] = await Promise.all([customer.getDetails(), scheduledClass.getDetails()]);
+    expect(profile).toMatchObject({ id: booking.customerId, firstName: "Alex", lastName: "Example", fullName: "Alex Example" });
+    expect(classDetails).toMatchObject({ id: booking.classId, name: "Pilates" });
+    if (booking.customerClassPassId === null) throw new Error("Expected a linked pass in the fixture.");
+    using purchasedPasses = await company.customerClassPasses();
+    using purchasedPass = await purchasedPasses.get(booking.customerClassPassId);
+    const passDetails = await purchasedPass.getDetails();
+    expect(passDetails.customerId).toBe(profile.id);
+    using products = await company.classPassProducts();
+    using product = await products.get(passDetails.classPassProductId);
+    expect(await product.getDetails()).toMatchObject({ id: 21, name: "Unlimited", isUnlimited: true });
+    expect(passDetails.id).not.toBe(passDetails.classPassProductId);
+    expect(fetcher).toHaveBeenCalledTimes(5);
+  });
+
+  it("joins a roster with one distinct-customer batch using list details without per-row reads", async () => {
+    const fetcher = vi.fn<typeof fetch>(async input => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/v2/management/bookings/") {
+        expect(url.searchParams.get("class_id")).toBe("3");
+        return Response.json({ results: [
+          fixtures.bookings, { ...fixtures.bookings, id: 2 }, { ...fixtures.bookings, id: 3, client_id: 4 },
+        ], next_page: null });
+      }
+      expect(url.pathname).toBe("/api/v2/management/clients/");
+      expect(url.searchParams.get("ids")).toBe("2,4");
+      expect(url.searchParams.get("page_size")).toBe("100");
+      return Response.json({ results: [
+        { ...fixtures.customers, id: 2 }, { ...fixtures.customers, id: 4, fullname: "Sam Example" },
+      ], next_page: null });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { session } = await setup();
+    using company = session as RpcStub<BsportCompanySession>;
+    using bookings = await company.bookings();
+    using bookingCursor = await bookings.list({ classId: 3, pageSize: 100 });
+    const rows: BsportBooking[] = [];
+    for (;;) {
+      const entries = await bookingCursor.next();
+      if (entries === null) break;
+      for (const entry of entries) {
+        using _resource = entry.resource;
+        rows.push(entry.details);
+      }
+    }
+    const ids = [...new Set(rows.map(booking => booking.customerId))];
+    const profiles = new Map<number, BsportCustomer>();
+    if (ids.length) {
+      using customers = await company.customers();
+      using customerCursor = await customers.list({ ids, pageSize: 100 });
+      for (;;) {
+        const entries = await customerCursor.next();
+        if (entries === null) break;
+        for (const entry of entries) {
+          using _resource = entry.resource;
+          profiles.set(entry.details.id, entry.details);
+        }
+      }
+    }
+    expect(rows.map(booking => ({ bookingId: booking.id, customerName: profiles.get(booking.customerId)?.fullName ?? null }))).toEqual([
+      { bookingId: 1, customerName: "Alex Example" }, { bookingId: 2, customerName: "Alex Example" }, { bookingId: 3, customerName: "Sam Example" },
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("binds company, collection and record sessions, with per-read queue authorization", async () => {
     const fetcher = vi.fn(async () => Response.json({ results: [fixtures.bookings], next_page: null }));
     vi.stubGlobal("fetch", fetcher);
