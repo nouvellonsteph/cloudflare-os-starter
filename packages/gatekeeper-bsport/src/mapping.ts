@@ -22,6 +22,8 @@ const date: Decoder<string> = v => typeof v === "string" && isDate(v) ? v : inva
 const datetime: Decoder<string> = v => typeof v === "string" && isDatetime(v) ? v : invalidResponse();
 const invoiceId: Decoder<string> = v => typeof v === "string" ? recordId("invoices", v) as string : invalidResponse();
 const nullable = <V>(decoder: Decoder<V>): Decoder<V | null> => v => v === null ? null : decoder(v);
+/** bsport omits phone_number when no phone is stored; the agent contract represents absence as null. */
+const optionalNullable = <V>(decoder: Decoder<V>): Decoder<V | null> => v => v === undefined || v === null ? null : decoder(v);
 const enumeration = <V extends string>(values: readonly V[]): Decoder<V> => v => values.includes(v as V) ? v as V : invalidResponse();
 const benefit: Decoder<T.BsportBenefitKind> = v => {
   if (v === "class_pass") return "class-pass";
@@ -39,12 +41,18 @@ const subscriptionStatus: Decoder<T.BsportSubscriptionStatus> = v =>
 const startMethod: Decoder<T.BsportClassPassProduct["startsOn"]> = v =>
   (["first-booking", "first-attendance", "purchase"] as const)[integer(v)] ?? invalidResponse();
 
-function decode<Value>(schema: Schema<Value>, value: unknown): Value {
+function decode<Value>(schema: Schema<Value>, value: unknown, collection?: Collection): Value {
   const raw = object(value);
   // Only these named, decoded fields leave this boundary; never spread provider JSON.
   return Object.fromEntries(Object.entries(schema).map(([key, spec]) => {
     const [source, decoder] = spec as readonly [string, Decoder];
-    return [key, decoder(raw[source])];
+    try { return [key, decoder(raw[source])]; }
+    catch (error) {
+      if (!collection) throw error;
+      // Only fixed schema metadata leaves this boundary, never the value or original error.
+      // eslint-disable-next-line preserve-caught-error -- A provider validation failure must not carry private data through cause.
+      throw new Error(`Invalid bsport response. Invalid field: ${collection}.${source}.`);
+    }
   })) as Value;
 }
 
@@ -65,7 +73,7 @@ const classes = {
 } satisfies Schema<T.BsportClass>;
 const customers = {
   id: ["id", id], firstName: ["firstname", text], lastName: ["lastname", text], fullName: ["fullname", text],
-  email: ["email", nullable(text)], phoneNumber: ["phone_number", nullable(text)], joinedDate: ["joined_date", date],
+  email: ["email", nullable(text)], phoneNumber: ["phone_number", optionalNullable(text)], joinedDate: ["joined_date", date],
   isArchived: ["is_archived", bool], referenceNumber: ["client_reference_number", text],
   emailMarketingAccepted: ["is_email_accepted", bool], smsMarketingAccepted: ["is_sms_accepted", bool],
   accountBalance: ["client_account_balance", nullable(money)], totalUnpaidAmount: ["total_unpaid_amount", money],
@@ -130,7 +138,7 @@ const invoices = {
 
 const MAPPERS: Record<Collection, (raw: unknown) => Details> = {
   bookings: raw => decode<T.BsportBooking>(booking, raw), classes: raw => decode<T.BsportClass>(classes, raw),
-  customers: raw => decode<T.BsportCustomer>(customers, raw), subscriptions: raw => decode<T.BsportSubscription>(subscriptions, raw),
+  customers: raw => decode<T.BsportCustomer>(customers, raw, "customers"), subscriptions: raw => decode<T.BsportSubscription>(subscriptions, raw),
   subscriptionProducts: raw => decode<T.BsportSubscriptionProduct>(subscriptionProducts, raw),
   classPassProducts: raw => decode<T.BsportClassPassProduct>(classPassProducts, raw),
   appointmentPassProducts: raw => decode<T.BsportAppointmentPassProduct>(appointmentPassProducts, raw),

@@ -39,6 +39,131 @@ exposed. Customer lists request only the mapped fields. Detail endpoints can ret
 these are discarded during mapping, never logged or stored by this Worker. Free-text descriptions
 are provider content, not instructions to trust.
 
+## Entity relationships and efficient reads
+
+The relationship guide and field-level lookup instructions live in **`src/types.d.ts`**, not
+just this README: its `types.txt` symlink is returned by vendor and bound Gatekeeper
+`getTypeScriptTypes()`, so Cloudflare OS agents receive the guide with the callable API.
+No automatic expansion is performed. An expanded object here means the **supported mapped
+details** from another collection, not the provider's full raw object or extra private fields.
+
+### Collection and endpoint names
+
+These are the fixed provider routes under `/api/v2/management/`; use the Gatekeeper methods,
+not raw HTTP. Each collection has `list(options)` and `get(id)`; read a returned resource with
+`getDetails()`. A list entry already has its mapped object in `entry.details`.
+
+| Company method | Provider route | Entity returned |
+| --- | --- | --- |
+| `customers()` | `clients/` | Client profile: `firstName`, `lastName`, `fullName`, selected contact/balance fields |
+| `bookings()` | `bookings/` | Booking linking a customer, scheduled class, and optionally a purchased class pass |
+| `classes()` | `classes/` | Scheduled class: `name`, start time, duration, capacity and reference IDs |
+| `subscriptions()` | `client-subscriptions/` | Customer-held subscription; **not** a catalogue subscription product |
+| `subscriptionProducts()` | `subscriptions/` | Subscription catalogue product and benefit reference |
+| `customerClassPasses()` | `client-class-passes/` | Purchased class pass: holder, product ID, recorded credits and validity |
+| `classPassProducts()` | `class-passes/` | Class-pass catalogue product: `name`, price and product rules |
+| `customerAppointmentPasses()` | `client-appointment-passes/` | Purchased appointment pass: holder, product ID and recorded credits |
+| `appointmentPassProducts()` | `appointment-passes/` | Appointment-pass catalogue product: `name`, price and product rules |
+| `invoices()` | `invoices/` | Invoice metadata, amounts and grouped lines; UUID IDs |
+
+Provider `client_id` on records is exposed as **`customerId`**. Provider `firstname`, `lastname`
+and `fullname` become `firstName`, `lastName` and `fullName`. This customer ID is unrelated to
+the integration's configured `BSPORT_CLIENT_ID` / `X-Client-ID` value. Callers use camelCase
+Gatekeeper fields and filters, not provider snake_case names.
+
+bsport omits `phone_number` when no phone is stored, even when requested in the list's `fields`.
+Both customer lists and detail reads normalize that absence to `phoneNumber: null`; explicit
+null, empty-string and stored phone values retain their meaning. Other missing or malformed
+customer fields still fail validation. A customer field mismatch reports only its fixed schema
+path, e.g. `Invalid bsport response. Invalid field: customers.joined_date.`, never the value or
+provider body. A generic invalid-response error alone is not evidence of a permission denial;
+non-200 provider responses are reported separately as `bsport read failed (HTTP <status>).`.
+
+### ID → object lookup map
+
+In this table, `company` means an **already-granted** `BsportCompanySession` for the same
+company. `collection.get(id)` opens a resource; call `getDetails()` to obtain its fields.
+Lookup chains are conceptual: await the collection and resource first, then their methods;
+the executable example below shows the required asynchronous steps.
+
+| Source field | Target collection and ID | Useful resolved fields / next relation |
+| --- | --- | --- |
+| `customerId` on a booking, customer subscription, purchased pass or invoice | `company.customers()` → `get(customerId)` | `firstName`, `lastName`, `fullName`, `email`; customer IDs identify clients |
+| `booking.classId` | `company.classes()` → `get(classId)` | `name`, `startsAt`, `durationMinutes`; this is a scheduled class, not a service |
+| `booking.customerClassPassId` (non-null) | `company.customerClassPasses()` → `get(customerClassPassId)` | Holder's `customerId`, `classPassProductId`, recorded credits and validity |
+| `customerClassPass.classPassProductId` | `company.classPassProducts()` → `get(classPassProductId)` | Product `name`, price, unlimited flag and rules; **not** the purchased-pass ID |
+| `customerAppointmentPass.appointmentPassProductId` | `company.appointmentPassProducts()` → `get(appointmentPassProductId)` | Product `name`, price and rules; **not** the purchased-pass ID |
+| `subscription.subscriptionProductId` (non-null) | `company.subscriptionProducts()` → `get(subscriptionProductId)` | Catalogue `name`, benefit and recurrence rules; customer subscription fields remain authoritative for that holding |
+| `benefitId` on a subscription or subscription product, with `benefitKind: "class-pass"` | `company.classPassProducts()` → `get(benefitId)` | Class-pass **product**, not a customer's purchased pass |
+| `benefitId` with `benefitKind: "appointment-pass"` | `company.appointmentPassProducts()` → `get(benefitId)` | Appointment-pass **product**, not a customer's purchased pass |
+| `subscription.recentOrUpcomingInvoiceIds[]` | `company.invoices()` → `get(id)` | At most two invoice references, not complete history; use `invoices().list({ customerId })` for history |
+| `invoice.sourceInvoiceId` (non-null) | `company.invoices()` → `get(sourceInvoiceId)` | Related source invoice; retain UUID string IDs |
+
+For example, the complete pass-name chain is:
+
+```text
+booking.customerClassPassId
+  → customerClassPasses().get(id).getDetails()
+  → purchasedPass.classPassProductId
+  → classPassProducts().get(id).getDetails()
+  → product.name
+```
+
+There is no generic `passId`: distinguish the purchased-pass ID from its product ID and the
+pass kind. Never resolve a class-pass ID through the appointment-pass collection. Numeric IDs
+can coincide across different collections without identifying the same entity.
+
+**Unresolvable references:** `benefitKind: "pack"` has no pack resolver in this connector.
+`teacherId`, `substituteTeacherId`, `venueId`, `serviceId` and `companyId` have no matching
+profile/catalogue collection here; teacher IDs must not be treated as customer IDs.
+`invoice.lines[].itemId` with `itemType` is not a documented universal foreign key: do not
+guess a product endpoint from its number. Skip null links; retain an explicit unresolved
+reference when a linked record is missing/inaccessible rather than inventing its name.
+
+### Join recipes without per-row request explosions
+
+1. **Select the source rows first.** For a class roster use `bookings().list({ classId })`, then
+   resolve distinct `customerId` values to names. Use explicit date/status filters for the
+   question being answered; canceled bookings are included unless filtered. A class list
+   without start boundaries covers now through 30 days ahead, not history; use
+   `startsAfter`/`startsBefore` for history or `classes().get(classId)` for known IDs.
+2. **Use data already returned.** Reuse `entry.details` from each source/related list instead
+   of calling `entry.resource.getDetails()` again. Deduplicate related IDs across source rows.
+   Maintain operation-local maps keyed by company + collection + ID; do not reuse private
+   profiles across users or treat old data as proof of current access.
+3. **Batch only where supported.** `ids` accepts 1–100 IDs on `customers`, `bookings`,
+   `subscriptions`, `subscriptionProducts`, `classPassProducts`, `customerClassPasses`,
+   `customerAppointmentPasses` and `invoices`. Chunk distinct IDs, skip empty chunks and set
+   `pageSize: 100`; still drain every cursor until `null`, even after an empty page.
+   `classes` and `appointmentPassProducts` do **not** have an `ids` filter. Reuse a relevant
+   filtered listing or call `get(id).getDetails()` once per distinct needed ID, with bounded
+   concurrency (e.g. four in flight), rather than launching an unbounded `Promise.all`.
+4. **Use the correct reverse filter.** Bookings, customer subscriptions, purchased appointment
+   passes and invoices accept singular `customerId`; purchased class passes accept plural
+   `customerIds`. `ids` always filters that collection's own records, not the related customers.
+   Subscription `benefitKind` and `benefitId` filters must be supplied together. Filters combine
+   with AND. Use the declared typed filters; do not send `expand[]`, `include` or guessed keys.
+5. **Release capabilities and preserve errors.** Dispose collections, cursors and every list
+   entry's `resource`, including when only using `details`. Missing/inaccessible related data
+   is not a reason to discard the original row. Do not turn authentication, rate-limit, transport
+   or provider errors into empty results, and do not retry them in an unbounded loop.
+
+To join **one** booking (provided as `booking`) using an already-granted company session:
+
+```ts
+using customers = await company.customers();
+using classes = await company.classes();
+using customer = await customers.get(booking.customerId);
+using scheduledClass = await classes.get(booking.classId);
+const [profile, classDetails] = await Promise.all([customer.getDetails(), scheduledClass.getDetails()]);
+// profile.firstName / profile.lastName / profile.fullName; classDetails.name
+```
+
+For many bookings, collect distinct customer IDs and batch `customers().list({ ids, pageSize: 100 })`
+instead. Scope still applies: a record-only or collection-only binding cannot open sibling
+collections. Request the necessary collections/records through the normal connection flow;
+documentation does not grant broader access. Joined reads are live and not a transactional snapshot.
+
 ## Private access and lifecycle
 
 - The API key authenticates the service; **it does not grant collaborators access**. Only a

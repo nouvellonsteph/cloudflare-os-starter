@@ -9,6 +9,7 @@ import { subresources } from "../src/resources.js";
 import { fixtures } from "./fixtures.js";
 import { stageCredentials } from "@gadgets/gatekeeper-kit/credential-stage";
 import type { TestExports } from "./worker.js";
+import TYPES from "../src/types.txt";
 
 const entrypoints = exports as TestExports;
 const settings = env as BsportEnv;
@@ -31,6 +32,29 @@ async function connected() {
 }
 
 describe("owner-only connection authority", () => {
+  it("ships the self-contained entity relationship guide through vendor and all binding types", async () => {
+    expect(await entrypoints.GatekeeperVendor({}).getTypeScriptTypes()).toBe(TYPES);
+    for (const guidance of [
+      "ID relationships and expansion", "customers().get(customerId).getDetails()",
+      "classes().get(classId).getDetails()", "customerClassPasses().get(customerClassPassId).getDetails()",
+      "classPassProducts().get(classPassProductId).getDetails()",
+      "appointmentPassProducts().get(appointmentPassProductId).getDetails()",
+      "subscriptionProducts().get(subscriptionProductId).getDetails()", "invoices().get(sourceInvoiceId).getDetails()",
+      "Deduplicate related IDs", "classes and appointmentPassProducts do NOT support ids",
+      "a purchased-pass ID is not a product ID",
+    ]) expect(TYPES).toContain(guidance);
+    const first = await connected();
+    await runInDurableObject(first.stub, async (_instance, state) => {
+      for (const resource of [{ company: 42 }, { company: 42, collection: "bookings" }, { company: 42, collection: "bookings", id: 1 }] as const) {
+        const gatekeeper = state.facets.get<main.BsportGatekeeper>(`docs-${resource.id ?? resource.collection ?? "company"}`, () => ({
+          class: state.exports.BsportGatekeeper({ props: { accountId: first.id, resource } }),
+        }));
+        expect(await gatekeeper.getTypeScriptTypes()).toBe(TYPES);
+      }
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("embeds the official square logo for both vendor and account without network requests", async () => {
     const vendor = await entrypoints.GatekeeperVendor({}).describe();
     const { user } = await connected();

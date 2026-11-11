@@ -58,6 +58,48 @@ describe("fixed, read-only provider boundary", () => {
     await new BsportClient({ ...settings, BSPORT_FRANCHISOR_ID: "7" }, fetcher).details("bookings", 1);
   });
 
+  it.each(["filtered list", "unfiltered list", "detail"] as const)("reads customer names from a %s when bsport omits phone_number", async method => {
+    // ClientListOutput and ClientOutput both omit phone_number when no phone is stored.
+    const { phone_number: _phone, ...customer } = fixtures.customers;
+    const fetcher = vi.fn<typeof fetch>(async input => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe(method === "detail" ? "/api/v2/management/clients/1/" : "/api/v2/management/clients/");
+      if (method !== "detail") {
+        expect(url.searchParams.get("fields")?.split(",")).toContain("phone_number");
+        expect(url.searchParams.get("ids")).toBe(method === "filtered list" ? "1,2" : null);
+      }
+      return Response.json(method === "detail" ? customer : { results: [customer], next_page: null });
+    });
+    const client = new BsportClient(settings, fetcher);
+    const details = method === "detail" ? await client.details("customers", 1) :
+      (await client.page("customers", method === "filtered list" ? { ids: [1, 2], pageSize: 100 } : { pageSize: 1 }, 1)).records[0];
+    expect(details).toMatchObject({ id: 1, firstName: "Alex", lastName: "Example", fullName: "Alex Example", phoneNumber: null });
+    expect(JSON.stringify(details)).not.toMatch(/PRIVATE|notes|official_document_id|payment_backend|emergency_contact|unsubscribe_link/);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { field: "phone_number", value: { private: "PRIVATE PHONE" } },
+    { field: "firstname", value: undefined },
+    { field: "joined_date", value: null },
+    { field: "total_unpaid_amount", value: 1 },
+  ])("rejects malformed customer $field with only a fixed field name in the error", async ({ field, value }) => {
+    const customer = { ...fixtures.customers, [field]: value };
+    const fetcher = vi.fn<typeof fetch>(async input => Response.json(new URL(String(input)).pathname.endsWith("/clients/") ?
+      { results: [customer], next_page: null } : customer));
+    const client = new BsportClient(settings, fetcher);
+    for (const read of [() => client.details("customers", 1), () => client.page("customers", { pageSize: 1 }, 1)]) {
+      const result = read();
+      await expect(result).rejects.toEqual(new Error(`Invalid bsport response. Invalid field: customers.${field}.`));
+      await expect(result).rejects.not.toHaveProperty("cause");
+    }
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([null, "", "+33123456789"])("preserves an explicit customer phone value %s", phone => {
+    expect(mapRecord("customers", { ...fixtures.customers, phone_number: phone }, 42)).toMatchObject({ phoneNumber: phone });
+  });
+
   it.each([401, 403, 404, 429, 500, 302])("sanitizes HTTP %s without retrying or disclosing a response body", async status => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response("secret-token-and-private-body", { status, headers: { location: "https://evil.example" } }));
     await expect(new BsportClient(settings, fetcher).details("bookings", 1)).rejects.toThrow(`HTTP ${status}`);
