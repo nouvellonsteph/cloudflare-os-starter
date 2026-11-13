@@ -50,6 +50,7 @@ export default defineConfig({
         BSPORT_COMPANY_ID: "42",
         BSPORT_CLIENT_ID: "test-client",
         BSPORT_OWNER_EMAIL: "owner@example.com",
+        BSPORT_ALLOWED_EMAILS: "Friend@Example.com, second@example.com",
         BSPORT_API_KEY: "fake-test-key"
       }
     },
