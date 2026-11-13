@@ -42,7 +42,9 @@ are provider content, not instructions to trust.
 ## Private access and lifecycle
 
 - The API key authenticates the service; **it does not grant collaborators access**. Only a
-  signed Access JWT for `BSPORT_OWNER_EMAIL` may enroll. The owner confirms a short-lived,
+  signed Access JWT for `BSPORT_OWNER_EMAIL` or an email in `BSPORT_ALLOWED_EMAILS` may enroll.
+  Each person gets their own connection and entitlement; all share the one deployment-managed key,
+  and no per-user bsport tokens exist. The owner confirms a short-lived,
   single-use connection link, then completes the normal Workshop handoff in that browser's session.
 - The account stores the verified email/subject, tenant/client/franchisor and Access realm,
   status, callback and temporary flow/stage state. It never stores the API key or provider records.
@@ -57,7 +59,7 @@ are provider content, not instructions to trust.
   key does not qualify. `403`/`404` deny; `401`, rate limits, transport failures and outages propagate
   as indeterminate failures. No verdict cache or legacy observer roster is kept.
 - Existing sessions and children recheck entitlement on reads, including after queue authorization.
-  Removing the owner, changing tenant/client/franchisor or Access realm, or revoking the connection
+  Removing the owner or an allow-listed email, changing tenant/client/franchisor or Access realm, or revoking the connection
   blocks old grants on their next use. Reconnect requires the original email and subject. Rotating
   the same company's key does not change entitlement; provider access is checked live.
 
@@ -76,7 +78,8 @@ This is a **template**, not an instruction to change production settings:
     "vars": {
       "BSPORT_COMPANY_ID": "42",
       "BSPORT_CLIENT_ID": "provider-issued-client-id",
-      "BSPORT_OWNER_EMAIL": "owner@example.com"
+      "BSPORT_OWNER_EMAIL": "owner@example.com",
+      // "BSPORT_ALLOWED_EMAILS": "colleague@example.com,other@example.com" // optional: may also connect
       // "BSPORT_FRANCHISOR_ID": "7" // only for the confirmed franchise credential type
     }
   }
