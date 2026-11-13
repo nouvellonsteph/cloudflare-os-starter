@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
-import type { BsportEnv } from "./env.js";
+import { isAllowedEmail, type BsportEnv } from "./env.js";
 
+/** The signed-in Access identity: the owner or an allow-listed email. */
 export type OwnerIdentity = { email: string; subject: string };
 const keys = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -8,7 +9,7 @@ const keys = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 export function approvedIdentity(payload: JWTPayload, env: BsportEnv): OwnerIdentity | null {
   if (typeof payload.email !== "string" || typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 256 ||
       typeof payload.exp !== "number" || payload.exp * 1000 <= Date.now() || typeof payload.iat !== "number" ||
-      payload.email.toLowerCase() !== env.BSPORT_OWNER_EMAIL.toLowerCase()) return null;
+      !isAllowedEmail(env, payload.email)) return null;
   return { email: payload.email.toLowerCase(), subject: payload.sub };
 }
 
