@@ -9,7 +9,7 @@ import { workerVersionTag } from "@gadgets/workshop-shared/gatekeeper";
 import { connectHandoffPageHtml, connectMutationError, escapeHtml, htmlResponse, INVALID_LINK_HTML, PAGE_STYLE } from "@gadgets/gatekeeper-kit/connect-pages";
 import { generateNonce, isLiveNonce, type TimedNonce } from "@gadgets/gatekeeper-kit/connect-nonce";
 import { commitStagedCredentials, discardStagedCredentials, peekStagedCredentials, stageCredentials } from "@gadgets/gatekeeper-kit/credential-stage";
-import { companyId, ensureConfigured, type BsportEnv } from "./env.js";
+import { companyId, ensureConfigured, isAllowedEmail, type BsportEnv } from "./env.js";
 import { verifyOwner, type OwnerIdentity } from "./identity.js";
 import { parseResourceUrl, resourceType, resourceUrl, supportedResources, validateSubresources, type Resource } from "./resources.js";
 import { BsportClient, BsportError } from "./client.js";
@@ -37,7 +37,7 @@ function entitlement(identity: OwnerIdentity, env: BsportEnv): Entitlement {
 }
 
 function validEntitlement(value: Entitlement | undefined, env: BsportEnv): value is Entitlement {
-  return value !== undefined && value.email === env.BSPORT_OWNER_EMAIL.toLowerCase() &&
+  return value !== undefined && isAllowedEmail(env, value.email) &&
     value.company === companyId(env) && value.client === env.BSPORT_CLIENT_ID && value.franchisor === (env.BSPORT_FRANCHISOR_ID ?? null) &&
     value.issuer === env.CF_ACCESS_ISS && value.audience === env.CF_ACCESS_AUD;
 }
