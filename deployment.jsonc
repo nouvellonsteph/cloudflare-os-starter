@@ -54,7 +54,8 @@
       "vars": {
         "BSPORT_COMPANY_ID": "4629",
         "BSPORT_CLIENT_ID": "corpoz",
-        "BSPORT_OWNER_EMAIL": "stephane@corpoz.fit"
+        "BSPORT_OWNER_EMAIL": "stephane@corpoz.fit",
+        "BSPORT_ALLOWED_EMAILS": "alishechtman@gmail.com,alice@corpoz.fit"
       }
     },
     "cloudflare": { "name": "corpoz-os-gk-cloudflare" },
