@@ -996,11 +996,15 @@ test("builds bsport in the starter and derives its private route and Access real
   assert.ok(generatedOutputs(generated).some(([id]) => id === "gatekeepers.bsport"));
 });
 
+test("accepts a bsport email allow-list", () => {
+  validateConfig(withGatekeepers({ bsport: { name: "acme-gk-bsport", vars: { ...bsportVars, BSPORT_ALLOWED_EMAILS: "a@example.com, b@example.com" } } }));
+});
+
 test("refuses bsport secrets in vars, tenant ambiguity and Access overrides", () => {
   for (const vars of [undefined, {}, { ...bsportVars, BSPORT_API_KEY: "synthetic-not-a-key" },
     { ...bsportVars, CF_ACCESS_ISS: "https://elsewhere.example.com" }, { ...bsportVars, CF_ACCESS_AUD: "different" },
     { ...bsportVars, BSPORT_COMPANY_ID: "042" }, { ...bsportVars, BSPORT_COMPANY_ID: "9007199254740992" },
-    { ...bsportVars, BSPORT_FRANCHISOR_ID: "0" }, { ...bsportVars, BSPORT_OWNER_EMAIL: "owner" },
+    { ...bsportVars, BSPORT_FRANCHISOR_ID: "0" }, { ...bsportVars, BSPORT_OWNER_EMAIL: "owner" }, { ...bsportVars, BSPORT_ALLOWED_EMAILS: "ok@example.com,not-an-email" }, { ...bsportVars, BSPORT_ALLOWED_EMAILS: "ok@example.com," },
     { ...bsportVars, BSPORT_CLIENT_ID: "padded " }, { ...bsportVars, BSPORT_CLIENT_ID: "bad\r\nheader" },
     { ...bsportVars, ORIGIN: "https://staging.example.com" }]) {
     assert.throws(() => validateConfig(withGatekeepers({ bsport: { name: "acme-gk-bsport", vars } })), /gatekeepers.bsport.vars/);

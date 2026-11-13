@@ -6,6 +6,8 @@ export interface BsportEnv {
   BSPORT_COMPANY_ID: string;
   BSPORT_FRANCHISOR_ID?: string;
   BSPORT_OWNER_EMAIL: string;
+  /** Optional comma-separated emails that may connect besides the owner. */
+  BSPORT_ALLOWED_EMAILS?: string;
   CF_ACCESS_ISS: string;
   CF_ACCESS_AUD: string;
   BASE_URL: string;
@@ -25,4 +27,14 @@ export function ensureConfigured(env: BsportEnv): void {
       !env.CF_ACCESS_ISS || !env.CF_ACCESS_AUD || !env.BASE_URL) {
     throw new Error("The bsport Gatekeeper is not configured.");
   }
+}
+
+/** The owner plus any allow-listed emails, lowercased. The shared key stays the only bsport identity. */
+export function allowedEmails(env: BsportEnv): Set<string> {
+  const list = (env.BSPORT_ALLOWED_EMAILS ?? "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+  return new Set([env.BSPORT_OWNER_EMAIL.toLowerCase(), ...list]);
+}
+
+export function isAllowedEmail(env: BsportEnv, email: string): boolean {
+  return allowedEmails(env).has(email.toLowerCase());
 }

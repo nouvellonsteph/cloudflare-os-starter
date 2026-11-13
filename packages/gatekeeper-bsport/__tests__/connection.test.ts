@@ -92,6 +92,22 @@ describe("owner-only connection authority", () => {
     expect(approvedIdentity({ sub: "x", email: owner.email, iat: 1, exp: 1 }, settings)).toBeNull();
   });
 
+  it("lets allow-listed emails connect with the shared key and still refuses everyone else", async () => {
+    const live = { iat: 1, exp: Date.now() / 1000 + 60 };
+    expect(approvedIdentity({ sub: "f", email: "FRIEND@example.com", ...live }, settings)).toEqual({ email: "friend@example.com", subject: "f" });
+    expect(approvedIdentity({ sub: "s", email: "second@example.com", ...live }, settings)).toEqual({ email: "second@example.com", subject: "s" });
+    expect(approvedIdentity({ sub: "o", email: owner.email, ...live }, settings)?.email).toBe(owner.email);
+    expect(approvedIdentity({ sub: "x", email: "stranger@example.com", ...live }, settings)).toBeNull();
+    expect(approvedIdentity({ sub: "x", email: "friend@example.com.evil.test", ...live }, settings)).toBeNull();
+    expect(approvedIdentity({ sub: "x", email: "friend@example.com", iat: 1, exp: 1 }, settings)).toBeNull();
+    // Removing an email from the list blocks its stored entitlement on the next read.
+    const { stub } = await connected();
+    await runInDurableObject(stub, (_instance, state) => { state.storage.kv.put("owner", { ...owner, email: "friend@example.com" }); });
+    await rpcResult(stub.assertLive());
+    await runInDurableObject(stub, (_instance, state) => { state.storage.kv.put("owner", { ...owner, email: "removed@example.com" }); });
+    await expect(rpcResult(stub.assertLive())).rejects.toThrow("not authorized");
+  });
+
   it("validates signed Access claims and completes only a same-origin, single-use handoff", async () => {
     const { privateKey, publicKey } = await generateKeyPair("RS256");
     const jwk = { ...await exportJWK(publicKey), kid: "owner-test", alg: "RS256", use: "sig" };
@@ -140,7 +156,7 @@ describe("owner-only connection authority", () => {
       return state.storage.kv.get<{ stageId: string }>("stagedCredentials")!.stageId;
     });
     await stub.commitReconnect(stageId);
-    await stub.assertLive();
+    await rpcResult(stub.assertLive());
     const expired = await stub.reconnect();
     await runInDurableObject(stub, (_instance, state) => {
       const flow = state.storage.kv.get<object>("flow")!;
