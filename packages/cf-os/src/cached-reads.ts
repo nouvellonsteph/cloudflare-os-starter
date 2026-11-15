@@ -21,6 +21,7 @@ export const LABELS: { [K in keyof CloudflareClient]: (...args: Parameters<Cloud
   findDnsRecords: (_accountId, _zone, host) => `Checking DNS records for ${host}`,
   getOrganization: () => "Reading the Zero Trust organization",
   listAccessApps: () => "Listing the Access applications",
+  listZoneAccessApps: () => "Listing the zone's Access applications",
   createAccessApp: () => "Creating the Access application",
   dryRunCreateAccessApp: () => "Checking the Access application request",
   listIdentityProviders: () => "Listing the identity providers",

@@ -141,6 +141,13 @@ test("pages accounts within the API's 50-per-page ceiling", async () => {
   assert.deepEqual(calls.map((call) => flag(call.args, "--per-page")), ["50", "50", "50"]);
 });
 
+test("lists a zone's Access applications with --zone, apart from the account's", async () => {
+  const apps = [{ name: "z", aud: "a", domain: "os.example.com" }];
+  const { spawn, calls } = fakeCf({ "zero-trust access applications list": apps });
+  assert.deepEqual(await cfClient({ spawn }).listZoneAccessApps(FAKE_ACCOUNT, "zone-id"), apps);
+  assert.equal(flag(calls[0].args, "--zone"), "zone-id");
+});
+
 test("lists Access applications unfiltered, so a covering wildcard one is among them", async () => {
   const apps = [{ name: "w", aud: "a", domain: "*.example.com" }];
   const { spawn, calls } = fakeCf({ "zero-trust access applications list": apps });

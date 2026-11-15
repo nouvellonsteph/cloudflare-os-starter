@@ -16,6 +16,7 @@ import {
   accessAppHosts,
   issuerOf,
   type CfAccessApp,
+  type CfZone,
   type CfAiGateway,
   type CfKvNamespace,
   type CfOrganization,
@@ -40,7 +41,7 @@ export async function verifyAccount(
   config: DeploymentConfig,
   origin: string,
 ): Promise<AccountCheck> {
-  const reads = startReads(client, config);
+  const reads = startReads(client, config, origin);
   const problems: string[] = [];
   try {
     await checkAccess(reads, config, origin, problems);
@@ -61,6 +62,11 @@ export async function verifyAccount(
 interface AccountReads {
   organization: Promise<CfOrganization>;
   accessApps: Promise<CfAccessApp[]>;
+  /**
+   * Reads the zone-scoped applications of the zone that owns the router's hostname (none when no
+   * zone does). Started only when the account's own applications lack the audience.
+   */
+  zoneAccessApps: () => Promise<CfAccessApp[]>;
   kvNamespaces?: Promise<CfKvNamespace[]>;
   buckets?: Promise<string[]>;
   gateways?: Promise<CfAiGateway[]>;
@@ -89,15 +95,31 @@ function gatewayToFind(config: DeploymentConfig): string | undefined {
 }
 
 /** Starts every read `config` calls for, at once, in the order they are judged. */
-function startReads(client: CloudflareClient, config: DeploymentConfig): AccountReads {
+function startReads(client: CloudflareClient, config: DeploymentConfig, origin: string): AccountReads {
   return {
     organization: started(client.getOrganization(config.accountId)),
     accessApps: started(client.listAccessApps(config.accountId)),
+    zoneAccessApps: () => zoneAccessApps(client, config.accountId, new URL(origin).host),
     // Only explicit IDs: null asks wrangler to provision, which needs nothing to exist yet.
     ...(kvPaths(config).some(([, id]) => id) ? { kvNamespaces: started(client.listKvNamespaces(config.accountId)) } : {}),
     ...(config.resources.blueprintContentBucket ? { buckets: started(client.listR2Buckets(config.accountId)) } : {}),
     ...(gatewayToFind(config) ? { gateways: started(client.listAiGateways(config.accountId)) } : {}),
   };
+}
+
+/**
+ * Access applications scoped to the zone that owns `host`, the most specific zone of the account
+ * whose apex is `host` or a parent of it. Cloudflare lists these separately from account-scoped
+ * ones, so the account list alone misses an application created under a zone.
+ */
+async function zoneAccessApps(client: CloudflareClient, accountId: string, host: string): Promise<CfAccessApp[]> {
+  const name = host.toLowerCase();
+  let owner: CfZone | undefined;
+  for (const zone of await client.listZones(accountId)) {
+    const apex = zone.name.toLowerCase();
+    if ((name === apex || name.endsWith(`.${apex}`)) && (!owner || apex.length > owner.name.length)) owner = zone;
+  }
+  return owner ? client.listZoneAccessApps(accountId, owner.id) : [];
 }
 
 /** `promise`, with a no-op catch attached so it may reject before anything awaits it. */
@@ -129,12 +151,16 @@ async function checkAccess(
       `${issuer}. The Workshop would reject every Access token it is sent.`);
   }
 
-  const all = await reads.accessApps;
+  // Zone-scoped applications are listed apart from the account's, so they are read only when the
+  // account's own do not hold the audience. The audience must still match exactly and the winning
+  // application must still gate every path of the hostname, wherever it is scoped.
+  let all = await reads.accessApps;
+  if (!all.some((app) => app.aud === config.access.audience)) all = [...all, ...await reads.zoneAccessApps()];
   const apps = all.filter((app) => app.aud === config.access.audience);
   const applied = accessAppFor(all, host);
   if (!apps.length) {
     problems.push(
-      `access.audience: no Access application in account ${config.accountId} has AUD tag ` +
+      `access.audience: no Access application in account ${config.accountId} (or in the zone that owns ${host}) has AUD tag ` +
       `${config.access.audience}. Copy it from the application protecting ${host}, or run ` +
       "`pnpm cf-os access` to find or create it.");
   } else if (applied && applied.aud !== config.access.audience && apps.some((app) => accessAppCovers(app, host))) {

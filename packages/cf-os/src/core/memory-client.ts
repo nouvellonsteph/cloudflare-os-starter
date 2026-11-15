@@ -31,6 +31,8 @@ export interface MemoryAccount {
   /** Null: the account has no Zero Trust organization. */
   organization?: CfOrganization | null;
   accessApps?: CfAccessApp[];
+  /** Zone-scoped Access applications, by zone ID. */
+  zoneAccessApps?: Record<string, CfAccessApp[]>;
   identityProviders?: CfIdentityProvider[];
   /** What `listAccounts` returns. */
   accounts?: CfAccount[];
@@ -114,6 +116,10 @@ export function memoryClient(account: MemoryAccount): CloudflareClient & {
     async listAccessApps() {
       gate("listAccessApps");
       return account.accessApps ?? [];
+    },
+    async listZoneAccessApps(_accountId, zone) {
+      gate("listZoneAccessApps");
+      return account.zoneAccessApps?.[zone] ?? [];
     },
     async createAccessApp(_accountId, body) {
       gate("createAccessApp");

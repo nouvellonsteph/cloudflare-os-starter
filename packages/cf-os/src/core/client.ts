@@ -120,6 +120,11 @@ export interface CloudflareClient {
   getOrganization(accountId: string): Promise<CfOrganization>;
   /** Every Access application in the account. */
   listAccessApps(accountId: string): Promise<CfAccessApp[]>;
+  /**
+   * Access applications scoped to one zone (an ID or apex name) rather than to the account: the
+   * account-level list never includes them.
+   */
+  listZoneAccessApps(accountId: string, zone: string): Promise<CfAccessApp[]>;
   createAccessApp(accountId: string, body: Record<string, unknown>): Promise<CfAccessApp>;
   /** The request {@link createAccessApp} would send, validated but not sent. */
   dryRunCreateAccessApp(accountId: string, body: Record<string, unknown>): Promise<unknown>;

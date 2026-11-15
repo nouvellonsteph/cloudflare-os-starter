@@ -308,6 +308,9 @@ export function cfClient(
     async listAccessApps(accountId) {
       return cfList<CfAccessApp>(["zero-trust", "access", "applications", "list"], on(accountId));
     },
+    async listZoneAccessApps(accountId, zone) {
+      return cfList<CfAccessApp>(["zero-trust", "access", "applications", "list", "--zone", zone], on(accountId));
+    },
     async createAccessApp(accountId, body) {
       // `create` takes only `--body`.
       return cfJson<CfAccessApp>(

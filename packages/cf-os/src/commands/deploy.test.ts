@@ -365,6 +365,7 @@ test("the account checks that fail print the same whichever read finishes first"
     const cf = fakeCf({
       "zero-trust organization get": { auth_domain: "other.cloudflareaccess.com" },
       "zero-trust access applications list": [],
+      "zones list": [],
       "kv namespaces list": [],
       "r2 buckets list": { buckets: [] },
     }, { delay });
@@ -375,8 +376,9 @@ test("the account checks that fail print the same whichever read finishes first"
   };
   const plain = await check();
   assert.match(plain.message, /does not match the account:\n {2}- access\.issuer is .*\n {2}- access\.audience: .*\n {2}- resources\.blueprintsKvNamespaceId: .*\n {2}- resources\.blueprintContentBucket: /);
-  // The four the account check reads, and the GitHub Worker's secrets, read beside them.
-  assert.equal(plain.calls, 5);
+  // The four the account check reads, the zones (the account holds no Access application with the
+  // audience, so it looks in the hostname's zone), and the GitHub Worker's secrets, read beside them.
+  assert.equal(plain.calls, 6);
   let started = 0;
   assert.deepEqual(await check(() => 60 - 10 * started++), plain);
 });

@@ -258,6 +258,7 @@ function fakeAccount(changes: Record<string, FakeReply> = {}): Record<string, Fa
   return {
     "zero-trust organization get": { auth_domain: "acme.cloudflareaccess.com" },
     "zero-trust access applications list": [{ name: "Cloudflare OS acme-os", aud: "aud-1", domain: "os.example.com" }],
+    "zones list": [],
     "kv namespaces list": [{ id: "kv-context", title: "c" }, { id: "kv-blueprints", title: "b" }],
     "r2 buckets list": { buckets: [{ name: "acme-content" }] },
     "ai-gateway gateways list": [{ id: "acme-ai" }],
@@ -297,7 +298,8 @@ test("reads at once, and judges the same whichever read finishes first", async (
   for (const replies of cases) {
     const reversed = verifyFake(replies, reversing());
     // Every read started before any settled.
-    assert.equal(reversed.calls.length, 5);
+    // The zone read follows the account's own applications, and only when they lack the audience.
+    assert.ok(reversed.calls.length >= 5);
     assert.deepEqual(await reversed.result, await verifyFake(replies).result);
   }
   const wrong = await verifyFake(cases[0], reversing()).result;
@@ -414,4 +416,64 @@ test("startBounded's promises may fail before they are awaited, and still throw 
   assert.equal(await reads[0], "a");
   await assert.rejects(reads[1], /^Error: no b$/);
   await assert.rejects(reads[2], /^Error: no c$/);
+});
+
+const zoneApp = { name: "Cloudflare OS acme-os", aud: "aud-1", type: "self_hosted", domain: "os.example.com" };
+
+test("finds the application in the zone that owns the router's hostname, not only in the account", async () => {
+  const account = {
+    ...matchingAccount(),
+    accessApps: [],
+    zones: [{ id: "zone-other", name: "other.com" }, { id: "zone-example", name: "example.com" }],
+    zoneAccessApps: { "zone-example": [zoneApp], "zone-other": [{ ...zoneApp, aud: "aud-1", domain: "os.other.com" }] },
+  };
+  assert.deepEqual(await problems(account), []);
+});
+
+test("still requires the exact audience and the hostname among zone applications", async () => {
+  const zones = [{ id: "zone-example", name: "example.com" }];
+  const wrongAud = await problems({
+    ...matchingAccount(), accessApps: [], zones, zoneAccessApps: { "zone-example": [{ ...zoneApp, aud: "aud-2" }] },
+  });
+  assert.equal(wrongAud.length, 1);
+  assert.match(wrongAud[0], /no Access application .* has AUD tag aud-1/);
+  const wrongHost = await problems({
+    ...matchingAccount(), accessApps: [], zones, zoneAccessApps: { "zone-example": [{ ...zoneApp, domain: "other.example.com" }] },
+  });
+  assert.equal(wrongHost.length, 1);
+  assert.match(wrongHost[0], /does not gate every path of os\.example\.com/);
+});
+
+test("ignores applications of a zone that does not own the hostname", async () => {
+  const found = await problems({
+    ...matchingAccount(),
+    accessApps: [],
+    zones: [{ id: "zone-other", name: "other.com" }],
+    zoneAccessApps: { "zone-other": [zoneApp] },
+  });
+  assert.equal(found.length, 1);
+  assert.match(found[0], /no Access application/);
+});
+
+test("a zone more specific than another owns the hostname", async () => {
+  const account = {
+    ...matchingAccount(),
+    accessApps: [],
+    zones: [{ id: "zone-apex", name: "example.com" }, { id: "zone-sub", name: "os.example.com" }],
+    zoneAccessApps: { "zone-apex": [], "zone-sub": [zoneApp] },
+  };
+  assert.deepEqual(await problems(account), []);
+});
+
+test("an unreadable zone matters only when the account's applications lack the audience", async () => {
+  const denied = {
+    ...memoryClient({ ...matchingAccount(), zones: [{ id: "zone-example", name: "example.com" }] }),
+    listZoneAccessApps: () => Promise.reject(new CfAuthError("[10000] Authentication error")),
+  } satisfies CloudflareClient;
+  assert.deepEqual(await verifyAccount(denied, config, origin), { problems: [] });
+  const missing = {
+    ...memoryClient({ ...matchingAccount(), accessApps: [], zones: [{ id: "zone-example", name: "example.com" }] }),
+    listZoneAccessApps: () => Promise.reject(new CfAuthError("[10000] Authentication error")),
+  } satisfies CloudflareClient;
+  assert.ok("skipped" in await verifyAccount(missing, config, origin));
 });
