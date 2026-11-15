@@ -36,6 +36,10 @@ class TestQueue extends RpcTarget implements ApprovalQueue {
   submitAction(..._args: Parameters<ApprovalQueue["submitAction"]>): ReturnType<ApprovalQueue["submitAction"]> { throw new Error("read-only"); }
   async bindHook<Hook extends RpcTarget>(_controller: Fetcher<HookController<Hook>>, _callback: RpcStub<Hook>, _description: HookDescription): Promise<void> { throw new Error("read-only"); }
   getGitCache(..._args: Parameters<ApprovalQueue["getGitCache"]>): ReturnType<ApprovalQueue["getGitCache"]> { throw new Error("read-only"); }
+  // Added to ApprovalQueue upstream after b562787. The read path never calls them.
+  async requireLive(): Promise<void> {}
+  watchSession(..._args: Parameters<ApprovalQueue["watchSession"]>): ReturnType<ApprovalQueue["watchSession"]> { throw new Error("read-only"); }
+  async getExecutionId(): Promise<string | undefined> { return undefined; }
 }
 
 /** Creates the real class returned by the user, as an Overseer would, with a per-session queue. */
