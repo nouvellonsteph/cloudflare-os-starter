@@ -126,10 +126,12 @@ allowlisted, pages have at most 100 records (default 50), responses at most 2 Mi
 page indices at most 100,000. Each request times out after 15 seconds. A 502/503/504 can be retried
 once. For a 429, the request waits one second before retrying and two seconds before the final
 retry, following [bsport's rate limit guidance](https://api-docs.production.bsport.io/guides/06-rate-limits.html#handling-429-responses).
-Access probes deduplicate records, start batches of up to four requests at least 300 ms apart, and
-settle each batch before proceeding. An unsuccessful batch stops verification. Concurrent API
-traffic can still exhaust the shared tenant limit. Large historical observer sets can take time
-and consume provider quota, and verification checks every required record before granting access.
+Access probes deduplicate records and settle batches of up to four before proceeding. A named
+Durable Object spaces requests for the same collection 100 ms apart across all concurrent
+workspace verifications, including retries. It rejects reservations more than five seconds in the
+future. An unsuccessful batch stops verification. Other API traffic can still compete for the
+tenant limit. Large historical observer sets can take time, and verification checks every required
+record before granting access.
 
 The default HTTP fetcher is bound to `globalThis`: native Workers `fetch` rejects a client
 instance as its receiver. An incorrect receiver is sanitized as `bsport read unavailable.`,

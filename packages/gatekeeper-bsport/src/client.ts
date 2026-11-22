@@ -12,7 +12,7 @@ const PROBE_BATCH_SIZE = 4;
 const PROBE_BATCH_INTERVAL_MS = 300;
 const RATE_LIMIT_BACKOFF_MS = [1_000, 2_000];
 
-function wait(ms: number): Promise<void> {
+export function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
@@ -62,7 +62,11 @@ async function readJson(response: Response): Promise<unknown> {
 /** The only provider HTTP boundary: constructed, allowlisted GETs, fixed origin and tenant. */
 export class BsportClient {
   /** Native Workers fetch requires the global receiver when called as a stored method. */
-  constructor(readonly env: BsportEnv, readonly fetcher: typeof fetch = fetch.bind(globalThis)) {}
+  constructor(
+    readonly env: BsportEnv,
+    readonly fetcher: typeof fetch = fetch.bind(globalThis),
+    readonly beforeRequest?: (collection: Collection) => Promise<void>,
+  ) {}
 
   /** Internal live access probes; their data never crosses to an agent or into durable storage. */
   async verifyAccess(values: string[]): Promise<void> {
@@ -108,6 +112,7 @@ export class BsportClient {
     let rateLimitRetries = 0;
     let retriedServerError = false;
     for (;;) {
+      if (this.beforeRequest) await this.beforeRequest(collection);
       let response: Response;
       try {
         // Workers supports manual, not error; reject redirects below without following them.
