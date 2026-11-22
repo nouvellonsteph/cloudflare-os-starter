@@ -7,10 +7,22 @@ import { CUSTOMER_FIELDS, invalidResponse, mapRecord, object, type Details } fro
 const ORIGIN = "https://public.production.bsport.io";
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_PAGE = 100_000;
+const PROBE_BATCH_SIZE = 4;
+// Leave headroom within bsport's 20 GETs per second, per endpoint and tenant.
+const PROBE_BATCH_INTERVAL_MS = 300;
+const RATE_LIMIT_BACKOFF_MS = [1_000, 2_000];
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 /** Sanitized failures never carry provider bodies, URLs, headers or underlying fetch errors. */
 export class BsportError extends Error {
-  constructor(readonly status: number) { super(`bsport read failed (HTTP ${status}).`); }
+  constructor(readonly status: number) {
+    super(status === 429
+      ? "bsport rate limit reached (HTTP 429). Wait a few seconds before retrying."
+      : `bsport read failed (HTTP ${status}).`);
+  }
 }
 
 /** Cleanup must not replace a sanitized failure with a provider stream error. */
@@ -60,27 +72,23 @@ export class BsportClient {
       await this.page("bookings", { pageSize: 1 }, 1);
       return;
     }
-    // Bounded fan-out even when a workspace has accumulated many historical requirements.
-    let index = 0;
-    let stopped = false;
-    const results = await Promise.allSettled(Array.from({ length: Math.min(4, records.length) }, async () => {
-      while (!stopped && index < records.length) {
-        const record = records[index++];
+    for (let index = 0; index < records.length; index += PROBE_BATCH_SIZE) {
+      const started = Date.now();
+      const batch = records.slice(index, index + PROBE_BATCH_SIZE);
+      const results = await Promise.allSettled(batch.map(record => {
         const collection = record.name as Collection;
-        try {
-          await this.details(collection, collection === "invoices" ? record.id : Number(record.id));
-        } catch (error) {
-          stopped = true;
-          throw error;
-        }
+        return this.details(collection, collection === "invoices" ? record.id : Number(record.id));
+      }));
+      // Settle the batch before deciding: an indeterminate failure takes precedence over denial.
+      const errors = results.filter(result => result.status === "rejected").map(result => result.reason);
+      const uncertain = errors.find(error => !(error instanceof BsportError && [403, 404].includes(error.status)));
+      if (uncertain !== undefined) throw uncertain;
+      if (errors.length) throw errors[0];
+      const remaining = PROBE_BATCH_INTERVAL_MS - (Date.now() - started);
+      if (index + PROBE_BATCH_SIZE < records.length && remaining > 0) {
+        await wait(remaining);
       }
-    }));
-    // Settle every in-flight read before returning. Indeterminate failures must not be hidden
-    // behind a concurrent definite denial (403/404).
-    const errors = results.filter(result => result.status === "rejected").map(result => result.reason);
-    const uncertain = errors.find(error => !(error instanceof BsportError && [403, 404].includes(error.status)));
-    if (uncertain !== undefined) throw uncertain;
-    if (errors.length) throw errors[0];
+    }
   }
 
   async #get(collection: Collection, id: number | string | undefined, query: URLSearchParams): Promise<unknown> {
@@ -97,8 +105,9 @@ export class BsportClient {
       });
       if (this.env.BSPORT_FRANCHISOR_ID) headers.set("X-Franchisor-ID", this.env.BSPORT_FRANCHISOR_ID);
     } catch { throw new Error("Invalid bsport credential configuration."); }
-    // One bounded retry for a transient server rejection, never for 401/403/429 or a redirect.
-    for (let attempt = 0; attempt < 2; attempt++) {
+    let rateLimitRetries = 0;
+    let retriedServerError = false;
+    for (;;) {
       let response: Response;
       try {
         // Workers supports manual, not error; reject redirects below without following them.
@@ -106,12 +115,18 @@ export class BsportClient {
       } catch { throw new Error("bsport read unavailable."); }
       if (response.status !== 200) {
         await discardBody(response);
-        if (attempt === 0 && [502, 503, 504].includes(response.status)) continue;
+        if (response.status === 429 && rateLimitRetries < RATE_LIMIT_BACKOFF_MS.length) {
+          await wait(RATE_LIMIT_BACKOFF_MS[rateLimitRetries++]);
+          continue;
+        }
+        if (!retriedServerError && [502, 503, 504].includes(response.status)) {
+          retriedServerError = true;
+          continue;
+        }
         throw new BsportError(response.status);
       }
       return readJson(response);
     }
-    throw new Error("bsport read unavailable.");
   }
 
   async details(collection: Collection, id: number | string): Promise<Details> {

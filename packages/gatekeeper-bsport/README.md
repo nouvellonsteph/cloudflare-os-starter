@@ -123,10 +123,13 @@ call or deployment is implied by a passing local check.
 `X-Company-ID`, and optional fixed `X-Franchisor-ID`. Fetch uses Workers-supported `redirect: "manual"`
 and rejects non-200 responses, including redirects, without following them. Filters are
 allowlisted, pages have at most 100 records (default 50), responses at most 2 MiB, and numeric
-page indices at most 100,000. Each request times out after 15 seconds and retries once only for
-502/503/504. Access probes deduplicate records, run at most four concurrent requests, stop scheduling
-on failure and settle all in-flight requests. Large historical observer sets can therefore be slow
-and consume provider quota; they are never silently truncated.
+page indices at most 100,000. Each request times out after 15 seconds. A 502/503/504 can be retried
+once. For a 429, the request waits one second before retrying and two seconds before the final
+retry, following [bsport's rate limit guidance](https://api-docs.production.bsport.io/guides/06-rate-limits.html#handling-429-responses).
+Access probes deduplicate records, start batches of up to four requests at least 300 ms apart, and
+settle each batch before proceeding. An unsuccessful batch stops verification. Concurrent API
+traffic can still exhaust the shared tenant limit. Large historical observer sets can take time
+and consume provider quota, and verification checks every required record before granting access.
 
 The default HTTP fetcher is bound to `globalThis`: native Workers `fetch` rejects a client
 instance as its receiver. An incorrect receiver is sanitized as `bsport read unavailable.`,
