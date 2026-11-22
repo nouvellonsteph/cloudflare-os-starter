@@ -58,7 +58,7 @@ describe("fixed, read-only provider boundary", () => {
     await new BsportClient({ ...settings, BSPORT_FRANCHISOR_ID: "7" }, fetcher).details("bookings", 1);
   });
 
-  it.each([401, 403, 404, 429, 500, 302])("sanitizes HTTP %s without retrying or disclosing a response body", async status => {
+  it.each([401, 403, 404, 500, 302])("sanitizes HTTP %s without retrying or disclosing a response body", async status => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response("secret-token-and-private-body", { status, headers: { location: "https://evil.example" } }));
     await expect(new BsportClient(settings, fetcher).details("bookings", 1)).rejects.toThrow(`HTTP ${status}`);
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -131,6 +131,31 @@ describe("fixed, read-only provider boundary", () => {
     fetcher.mockImplementation(async () => Response.json({ results: [], next_page: null }));
     await client.verifyAccess(subresources(42));
     expect(new URL(String(fetcher.mock.calls[1][0])).searchParams.get("page_size")).toBe("1");
+  });
+
+  it("waits for the rate-limit window and retries only the rejected historical record", async () => {
+    const fetcher = vi.fn<typeof fetch>(async input => {
+      const id = Number(new URL(String(input)).pathname.split("/").at(-2));
+      return Response.json({ ...fixtures.bookings, id });
+    });
+    fetcher.mockResolvedValueOnce(new Response(null, { status: 429 }));
+    const started = Date.now();
+    await new BsportClient(settings, fetcher).verifyAccess(subresources(42, "bookings", [1, 2]));
+    expect(Date.now() - started).toBeGreaterThanOrEqual(950);
+    expect(fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname.split("/").at(-2)))
+      .toEqual(["1", "2", "1"]);
+  });
+
+  it("paces a historical set across batches", async () => {
+    const starts: number[] = [];
+    const fetcher = vi.fn<typeof fetch>(async input => {
+      starts.push(Date.now());
+      const id = Number(new URL(String(input)).pathname.split("/").at(-2));
+      return Response.json({ ...fixtures.bookings, id });
+    });
+    await new BsportClient(settings, fetcher).verifyAccess(subresources(42, "bookings", [1, 2, 3, 4, 5]));
+    expect(starts).toHaveLength(5);
+    expect(starts[4] - starts[0]).toBeGreaterThanOrEqual(275);
   });
 
   it("settles in-flight probes, stops new ones and preserves indeterminate failures", async () => {
