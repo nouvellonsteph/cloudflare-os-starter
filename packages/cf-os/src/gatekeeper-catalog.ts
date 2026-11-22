@@ -125,5 +125,21 @@ export async function loadCatalog(root: string): Promise<GatekeeperCatalog> {
       ] }],
     });
   }
+  const sandboxDir = "packages/gatekeeper-sandbox";
+  const sandboxConfig = join(root, sandboxDir, "wrangler.jsonc");
+  if (existsSync(sandboxConfig)) {
+    if (offered.some(entry => entry.slug === "sandbox")) {
+      throw new Error("Upstream now offers sandbox; resolve the local registration collision before deployment.");
+    }
+    const errors: ParseError[] = [];
+    const config = parse(readFileSync(sandboxConfig, "utf8"), errors, { allowTrailingComma: true }) as ProdWranglerConfig;
+    if (errors.length) throw new Error(`${sandboxDir}/wrangler.jsonc does not parse.`);
+    offered.push({
+      slug: "sandbox", packageDir: sandboxDir, packageName: "gatekeeper-sandbox", workspace: "starter",
+      preinstall: false, singleton: false, config, readme: `${sandboxDir}/README.md`,
+      vars: [],
+      secrets: [],
+    });
+  }
   return { offered, excluded };
 }
