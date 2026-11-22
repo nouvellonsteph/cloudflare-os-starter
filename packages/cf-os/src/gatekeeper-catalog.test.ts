@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { secretSetup, UNDECLARED_VARS, undeclaredVarWarnings } from "./core/gatekeepers.ts";
+import { PACKAGE_DIRS } from "./core/deployment.ts";
+import { PDF_RENDERER_SERVICE, secretSetup, UNDECLARED_VARS, undeclaredVarWarnings } from "./core/gatekeepers.ts";
 import { loadCatalog } from "./gatekeeper-catalog.ts";
-import { testCatalogWithGitlab } from "./test-support.ts";
+import { testCatalogWithGitlab, testCatalogWithGoogle } from "./test-support.ts";
 
 /** The repository root, whose submodule the real catalog is read from. */
 const ROOT = join(import.meta.dirname, "..", "..", "..");
@@ -55,6 +56,14 @@ test("offers upstream's installable Gatekeepers, as the hosted catalog would", a
   assert.deepEqual(homeassistant.secrets, []);
   assert.equal(homeassistant.singleton, true);
 
+  // Offered with its binding to upstream's PDF renderer, which the deploy deploys beside it: on a
+  // pin that has the renderer. One from before it has a Google Gatekeeper that binds nothing.
+  const google = catalog.offered.find((gatekeeper) => gatekeeper.slug === "google")!;
+  assert.equal(google.packageName, "@gadgets/google-gatekeeper");
+  if (existsSync(join(ROOT, PACKAGE_DIRS.pdfRenderer, "wrangler.jsonc"))) {
+    assert.deepEqual(google.config.services, [{ binding: "PDF_RENDERER", service: "pdf-renderer", entrypoint: "PdfRenderer" }]);
+  }
+
   // The built-ins are excluded by slug, and so is what upstream will not install.
   for (const slug of ["context", "scheduler", "websearch"]) {
     assert.ok(!slugs.includes(slug), slug);
@@ -71,6 +80,14 @@ test("offers upstream's installable Gatekeepers, as the hosted catalog would", a
 test("the shared test catalog says what the real one says", async () => {
   const real = await loadCatalog(ROOT);
   const fake = testCatalogWithGitlab();
+  const google = testCatalogWithGoogle().offered.find((gatekeeper) => gatekeeper.slug === "google")!;
+  // On a pin from before the renderer, the test catalog binds Google to it where upstream's does not.
+  if (!existsSync(join(ROOT, PACKAGE_DIRS.pdfRenderer, "wrangler.jsonc"))) {
+    const services = google.config.services!.filter((service) => service.service !== PDF_RENDERER_SERVICE);
+    if (services.length) google.config.services = services;
+    else delete google.config.services;
+  }
+  fake.offered.push(google);
   for (const gatekeeper of fake.offered) {
     assert.deepEqual(gatekeeper, real.offered.find((offered) => offered.slug === gatekeeper.slug), gatekeeper.slug);
   }
@@ -103,6 +120,21 @@ test("excludes, without throwing, what upstream's rules or the starter cannot ha
   assert.match(reason("linear")!, /KV namespaces/);
   assert.match(reason("x")!, /service bindings/);
   assert.match(reason("context")!, /always deploys it/);
+});
+
+test("lets through a binding to upstream's PDF renderer, and to no other Worker", async (t) => {
+  const { INTERNAL_WORKERS } = await import("@gadgets/scripts/release/manifest-lib");
+  assert.ok(INTERNAL_WORKERS.has(PDF_RENDERER_SERVICE), `${PDF_RENDERER_SERVICE} is no longer an internal Worker upstream`);
+
+  const root = scratchPackages(t, ["gatekeeper-google"]);
+  const path = join(root, "cloudflare-os", "packages", "gatekeeper-google", "wrangler.jsonc");
+  const config = JSON.parse(readFileSync(path, "utf8").replace(/^\s*\/\/.*$/gm, "")) as { services?: unknown[] };
+  // A pin from before the renderer has a Google Gatekeeper that binds nothing.
+  (config.services ??= []).push({ binding: "OTHER", service: "other" });
+  writeFileSync(path, JSON.stringify(config));
+  const catalog = await loadCatalog(root);
+  assert.deepEqual(catalog.offered, []);
+  assert.match(catalog.excluded.find((gatekeeper) => gatekeeper.slug === "google")!.reason, /service bindings/);
 });
 
 test("is unavailable, not a crash, without the submodule's packages", async (t) => {
