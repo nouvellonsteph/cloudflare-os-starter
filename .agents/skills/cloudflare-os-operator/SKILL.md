@@ -115,14 +115,6 @@ for deployment, secret installation or live provider tests. Workspace sharing mu
 another connection. Local synthetic checks do not prove live provider permissions, field shape
 or the parent Cloudflare OS upgrade's migration/rollback safety.
 
-### Sandbox Gatekeeper
-
-`gatekeepers.sandbox` is opt-in and requires Cloudflare Containers on Workers Paid and a Docker
-build environment. Follow the [Sandbox guide](../../../packages/gatekeeper-sandbox/README.md).
-Confirm the instance size and billing before deployment. Keep the Worker private and verify that
-terminal and files are account-scoped, agent commands and writes require approval, and a saved
-workspace restores correctly. A Wrangler dry-run alone cannot verify those runtime behaviors.
-
 ### Trust Boundary
 
 Require explicit operator approval before changing any of these:

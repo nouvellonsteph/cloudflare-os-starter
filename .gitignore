@@ -6,6 +6,3 @@ packages/*/wrangler.prod.jsonc
 deployment.local.jsonc
 .cf-os/
 packages/gatekeeper-bsport/src/generated/
-
-packages/gatekeeper-sandbox/src/generated/
-packages/gatekeeper-sandbox/worker-configuration.d.ts

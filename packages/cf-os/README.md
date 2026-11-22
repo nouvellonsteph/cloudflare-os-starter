@@ -40,10 +40,6 @@ the Router. `pnpm cf-os secrets bsport` asks for only `BSPORT_API_KEY`, with no 
 Setting secrets deploys a new Worker version; confirm the account, existing Worker and production
 approval before running it. `check` does not install credentials or prove live bsport access.
 
-The starter's optional `gatekeepers.sandbox` deploys the private Linux workspace Worker. Enable it
-in the Gatekeeper selection or add its Worker name in `deployment.jsonc`. It requires Workers Paid,
-Cloudflare Containers, and Docker to build its image. See the [Sandbox guide](../gatekeeper-sandbox/README.md).
-
 ## Output and prompts
 
 Results meant for scripts are JSON on stdout: `import`'s values, `access`'s issuer and audience, the names of the secrets `secrets` set, the request a `--dry-run` would send, and what `update` did (whether the pin moved and was staged, the merge, the install, the brief's path and anything left to do; it exits 1 when something is left, even with the pin moved). Without a terminal, `update` holds back `pnpm install`'s output and shows only its end, if it fails. Everything else goes to stderr. Exit codes are 0 for success, 1 for failure, and 130 for a cancelled prompt.
