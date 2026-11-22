@@ -203,6 +203,32 @@ test("rejects malformed AI Gateway providers and account", () => {
     /aiGateway.accountId must be null or 32 hexadecimal/i);
 });
 
+test("preserves the private Sandbox container binding when its Gatekeeper is selected", async () => {
+  const root = join(import.meta.dirname, "..", "..", "..", "..");
+  const localCatalog = await loadCatalog(root);
+  const config = variant((value) => {
+    value.gatekeepers = {
+      sandbox: { name: "acme-gk-sandbox", vars: { SANDBOX_INSTANCE_TYPE: "standard-3" } },
+    };
+  });
+  validateGatekeepers(config, localCatalog);
+  const generated = generateConfigs(config, await baseConfigs(), localCatalog);
+  const sandbox = generated.gatekeepers.sandbox;
+  assert.equal(sandbox.name, "acme-gk-sandbox");
+  assert.equal(sandbox.workers_dev, false);
+  assert.equal(sandbox.preview_urls, false);
+  assert.ok(!sandbox.routes?.length);
+  assert.equal(sandbox.vars?.SANDBOX_INSTANCE_TYPE, "standard-3");
+  assert.deepEqual(Reflect.get(sandbox, "containers"), [{
+    class_name: "SandboxWorkspace",
+    scheduling_policy: "durable_object",
+    images: { workspace: { dockerfile: "./Dockerfile" } },
+  }]);
+  assert.ok(generated.workshop.services?.some(service =>
+    service.binding === "GATEKEEPER_SANDBOX" && service.entrypoint === "GatekeeperVendor"));
+  assert.ok(deployWaves(config)[0].includes("gatekeepers.sandbox"));
+});
+
 test("generates Access-mode Workshop, Context, and custom Gatekeeper configs", async () => {
   const generated = generateConfigs(validConfig, await baseConfigs(), catalog);
   const vars = generated.workshop.vars!;

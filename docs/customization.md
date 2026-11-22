@@ -120,6 +120,13 @@ credentials until the platform upgrade and separate deployment/secret-installati
 complete. Native per-Worker Workers Builds can be considered afterwards; adding this entry does
 not itself configure build triggers or deploy-on-push automation.
 
+#### Sandbox Gatekeeper
+
+Select `gatekeepers.sandbox` to give users a private Linux workspace with an interactive
+terminal and file tree. The optional Worker uses Cloudflare Containers. An explicitly connected
+gadget can read workspace files and request file writes or commands through Workshop.
+See the [Sandbox setup and verification guide](../packages/gatekeeper-sandbox/README.md).
+
 ### Sign-in methods
 
 Cloudflare OS supports three ways to sign users in. This starter deploys Cloudflare Access.

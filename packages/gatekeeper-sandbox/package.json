@@ -1,0 +1,25 @@
+{
+  "name": "gatekeeper-sandbox",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "dependencies": {
+    "@cloudflare/sandbox": "1.0.3",
+    "@gadgets/configurator-ui": "link:../../cloudflare-os/packages/configurator-ui",
+    "@gadgets/gatekeeper-kit": "link:../../cloudflare-os/packages/gatekeeper-kit",
+    "@gadgets/workshop-shared": "link:../../cloudflare-os/packages/workshop-shared",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "capnweb": "catalog:",
+    "capnweb-validate": "catalog:"
+  },
+  "devDependencies": {
+    "@gadgets/scripts": "link:../../cloudflare-os/scripts",
+    "@types/node": "26.1.0",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plugin-singlefile": "2.3.4",
+    "wrangler": "catalog:"
+  }
+}
