@@ -1081,7 +1081,7 @@ test("builds bsport in the starter and derives its private route and Access real
   assert.deepEqual(generated.workshop.services!.find(service => service.binding === "GATEKEEPER_BSPORT"), { binding: "GATEKEEPER_BSPORT", service: "acme-gk-bsport", entrypoint: "GatekeeperVendor" });
   assert.ok(buildCommands(config, localCatalog).flat().some(command => command.args.join(" ") === "exec vp run -F gatekeeper-bsport --no-cache build"));
   assert.equal(workerDir("gatekeepers.bsport", localCatalog), "packages/gatekeeper-bsport");
-  assert.ok(deployWaves(config)[0].includes("gatekeepers.bsport"));
+  assert.ok(deployWaves(config, localCatalog)[0].includes("gatekeepers.bsport"));
   assert.ok(generatedOutputs(generated).some(([id]) => id === "gatekeepers.bsport"));
 });
 
