@@ -86,14 +86,21 @@ function scratchRepository(t: Parameters<typeof scratchProject>[0], path: string
  */
 async function updating(
   t: Parameters<typeof scratchProject>[0],
-  { values = {}, replies = {}, script, path, packageJson = true }: {
+  { values = {}, replies = {}, script, path, packageJson = true, operatorDocs = false }: {
     values?: Record<string, string | boolean>; replies?: Replies; script?: Step[]; path?: string; packageJson?: boolean;
+    operatorDocs?: boolean;
   } = {},
 ) {
   const root = path ? scratchRepository(t, path) : scratchProject(t, TEMPLATE);
   path ??= "cloudflare-os";
   writeFileSync(join(root, path, ".git"), `gitdir: ../.git/modules/${path}\n`);
   if (packageJson) writeFileSync(join(root, "package.json"), "{}\n");
+  if (operatorDocs) {
+    const references = join(root, "docs", "operator", "references");
+    mkdirSync(references, { recursive: true });
+    writeFileSync(join(references, "updating.md"), "# Updating\n");
+    writeFileSync(join(references, "upgrade-and-rollback.md"), "# Upgrade and rollback\n");
+  }
   const tools = recording({ "git rev-parse --show-toplevel": { stdout: `${root}\n` }, ...behind(path), ...replies });
   const prompter = script ? scriptedPrompter(script) : null;
   const harness = testContext({ root, prompter });
@@ -148,7 +155,7 @@ test("merges the starter, checks out its pin, installs, and writes the brief", a
   assert.match(text, /## Starter commits \(2\)\n\nCompare: https:\/\/github\.com\/cloudflare\/cloudflare-os-starter\/compare\/a+\.\.\.b+\n\n- `bbbbbbb` Second starter change/);
   assert.match(text, /## cloudflare-os commits \(3\)\n\nCompare: https:\/\/github\.com\/cloudflare\/cloudflare-os\/compare\/c+\.\.\.d+\n\n- `ddddddd` Three/);
   assert.match(text, new RegExp(`git reset --keep ${OLD_HEAD}`));
-  assert.match(text, /references\/updating\.md/);
+  assert.match(text, /`\.agents\/skills\/cloudflare-os-operator\/references\/updating\.md`/);
   assert.match(text, /## Gatekeeper contract changes \(1\)\n\nThese change `@gadgets\/workshop-shared\/gatekeeper`[\s\S]*- `d111111` Two/);
   assert.match(text, /That includes the operator's own Gatekeepers, which the starter cannot adapt for them\./);
   assert.match(text, /not a class passes both/);
@@ -254,7 +261,7 @@ test("--dry-run lists what is coming, and merges and writes nothing", async (t) 
 });
 
 test("--upstream checks upstream's main out and stages it, and the brief names the upgrade gate", async (t) => {
-  const { code, commands, stderr, brief } = await updating(t, { values: { upstream: true } });
+  const { code, commands, stderr, brief } = await updating(t, { values: { upstream: true }, operatorDocs: true });
   assert.equal(code, 0);
   assert.ok(commands().includes(`git -C cloudflare-os fetch --no-tags --shallow-since=2025-10-09T08:53:19Z ${UPSTREAM} main`));
   assert.deepEqual(commands().slice(-6), [
@@ -272,7 +279,8 @@ test("--upstream checks upstream's main out and stages it, and the brief names t
   assert.match(stderr(), /Next: carry out the steps in \.cf-os\/update\.md now\. They are addressed to you, the agent that ran this/);
   const text = brief()!;
   assert.match(text, /\*\*staged, not committed\*\*/);
-  assert.match(text, /upgrade-and-rollback\.md` before committing the pin/);
+  assert.match(text, /`docs\/operator\/references\/updating\.md`/);
+  assert.match(text, /`docs\/operator\/references\/upgrade-and-rollback\.md` before committing the pin/);
   assert.match(text, /git restore --staged cloudflare-os/);
 });
 

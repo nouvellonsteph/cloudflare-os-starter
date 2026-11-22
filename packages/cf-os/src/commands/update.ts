@@ -38,8 +38,11 @@ export const BRIEF = join(".cf-os", "update.md");
 /** Where a starter project has the submodule, whatever its URL. */
 const STARTER_SUBMODULE = "cloudflare-os";
 
-/** The operator skill's references on the starter's `main`, for repositories that do not have them merged in. */
-const REFERENCES = `${DEFAULT_TEMPLATE}/blob/main/.agents/skills/cloudflare-os-operator/references`;
+const OPERATOR_REFERENCES = "docs/operator/references";
+const LEGACY_REFERENCES = ".agents/skills/cloudflare-os-operator/references";
+
+/** The upstream starter's guides, for repositories that do not merge the starter. */
+const REFERENCES = `${DEFAULT_TEMPLATE}/blob/main/${LEGACY_REFERENCES}`;
 
 /** Upstream's Gatekeeper contract, `@gadgets/workshop-shared/gatekeeper` and `/cloudflare-gatekeeper`. */
 const CONTRACT = ["packages/workshop-shared/src/gatekeeper.ts", "packages/workshop-shared/src/cloudflare-gatekeeper.ts"];
@@ -539,15 +542,10 @@ function contractStep(state: Update): string[] {
       "changed helpers that Gatekeepers use."];
 }
 
-/** A reference in the operator skill: the merged copy in a starter project, else the starter's `main`. */
-function reference(state: Update, file: string): string {
-  return state.isStarter ? `\`.agents/skills/cloudflare-os-operator/references/${file}\`` : `${REFERENCES}/${file}`;
-}
-
 /** The step for a pin moved back. */
-function rollbackStep(state: Update): string {
+function rollbackStep(state: Update, guide: string): string {
   return `This is a rollback: it removes the commits listed under "${state.path} commits rolled back". Follow ` +
-    `${reference(state, "upgrade-and-rollback.md")}'s "Rollback Matrix" before committing it. Durable Object ` +
+    `${guide}'s "Rollback Matrix" before committing it. Durable Object ` +
     "migrations and storage changes in those commits do not roll back with the code: if there are any, stop and put " +
     "them to the operator. Whatever this repository changed to follow those commits (Gatekeepers migrated for a " +
     "contract change, new vars, catalog entries) has to go back too.";
@@ -588,9 +586,10 @@ function urlStep(state: Update): string[] {
 }
 
 /** The coding agent's steps after a starter merge. */
-function starterSteps(state: Update): string[] {
+function starterSteps(state: Update, references: string): string[] {
+  const rollbackGuide = `\`${references}/upgrade-and-rollback.md\``;
   return [
-    "Read `.agents/skills/cloudflare-os-operator/references/updating.md` (in the merged tree, so it is the " +
+    `Read \`${references}/updating.md\` (in the merged tree, so it is the ` +
       "newest version), then work through its checklist against both commit ranges above.",
     state.merge === "conflicted"
       ? "Resolve the conflicts listed above. Keep the operator's values and customisations: " +
@@ -599,12 +598,12 @@ function starterSteps(state: Update): string[] {
         "comments. Then conclude the merge (`git add` the files, `git commit --no-edit`) and run `pnpm install`."
       : "Nothing conflicted. Where the merge brought starter changes to files the operator customised, check " +
         "their values and customisations survived.",
-    ...state.staged && state.rollback ? [rollbackStep(state)] : [],
+    ...state.staged && state.rollback ? [rollbackStep(state, rollbackGuide)] : [],
     ...state.staged && !state.rollback
       ? [`The ${state.path} pin moved off the starter's, to a commit the starter has not adapted to: everything ` +
         "in `updating.md` may apply to `packages/cf-os` too, and lint, build or test failures are expected. " +
         "Start with the catalog (`updating.md`'s \"Catalog Alignment\"), as nothing type-checks until it matches." +
-        (state.preview ? "" : " Follow `.agents/skills/cloudflare-os-operator/references/upgrade-and-rollback.md` " +
+        (state.preview ? "" : ` Follow ${rollbackGuide} ` +
           "before committing the pin.")]
       : [],
     ...previewSteps(state),
@@ -649,7 +648,7 @@ function pinSteps(state: Update): string[] {
     ...contractStep(state),
     EXPORT_STEP,
     ...urlStep(state),
-    ...state.staged && state.rollback ? [rollbackStep(state)] : [],
+    ...state.staged && state.rollback ? [rollbackStep(state, `${REFERENCES}/upgrade-and-rollback.md`)] : [],
     ...state.staged && !state.rollback && !state.preview
       ? [`The pin is upstream's \`${upstreamRef(state)}\`, which nobody has reviewed for this repository. Follow ` +
         `${REFERENCES}/upgrade-and-rollback.md, mapped the same way, before committing it.`]
@@ -713,7 +712,7 @@ function summary(state: Update, status: "up-to-date" | "dry-run" | "declined" | 
 }
 
 /** `.cf-os/update.md`: the record of this update, and the coding agent's instructions. */
-function brief(state: Update, when: Date): string {
+function brief(state: Update, when: Date, references: string): string {
   const pinMoved = state.newPin !== state.oldPin;
   const mergeState = {
     none: "Nothing to merge: the project already had every starter commit.",
@@ -750,7 +749,7 @@ function brief(state: Update, when: Date): string {
         `\`git reset --keep ${state.oldHead}\`, then \`git submodule update --init --recursive\`${reinstall}.`,
     ]
     : [`- \`git restore --staged ${state.path}\`, then \`git submodule update --init --recursive ${state.path}\`${reinstall}.`];
-  const steps = state.isStarter ? starterSteps(state) : pinSteps(state);
+  const steps = state.isStarter ? starterSteps(state, references) : pinSteps(state);
   const contract = !state.contract
     ? `Could not be listed here. Diff it instead: ${diffCommand(state, CONTRACT)}.`
     : state.contract.length
@@ -834,7 +833,10 @@ function writeBrief(ctx: Context, state: Update, when: Date): string {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, ".gitignore"), "*\n");
   const path = join(ctx.root, BRIEF);
-  writeFileSync(path, brief(state, when));
+  const references = existsSync(join(ctx.root, OPERATOR_REFERENCES, "updating.md"))
+    ? OPERATOR_REFERENCES
+    : LEGACY_REFERENCES;
+  writeFileSync(path, brief(state, when, references));
   return path;
 }
 

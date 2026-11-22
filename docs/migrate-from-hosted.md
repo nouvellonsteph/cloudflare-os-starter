@@ -16,7 +16,7 @@ so migrating is a version upgrade as well as a move. That means the usual upgrad
 upstream changes can be breaking, and a newer release can carry Durable Object migrations that run
 against your existing data the first time you deploy. If you want the full gate before touching
 production — compatibility review, migration plan, rollback matrix — it is in
-[Upgrade and rollback](../.agents/skills/cloudflare-os-operator/references/upgrade-and-rollback.md).
+[Upgrade and rollback](operator/references/upgrade-and-rollback.md).
 Do not deploy a pin *older* than what the instance runs; downgrade the code and the storage stays
 migrated.
 
