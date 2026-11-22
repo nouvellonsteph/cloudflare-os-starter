@@ -65,8 +65,7 @@
     "mcpportal": {
       "name": "corpoz-os-gk-mcpportal",
       "vars": { "MCP_PORTAL_URL": "https://portal.corpoz.fit/mcp" }
-    },
-    "sandbox": { "name": "corpoz-os-gk-sandbox" }
+    }
   },
 
   // This starter deploys Cloudflare Access mode. Cloudflare OS also supports built-in password
