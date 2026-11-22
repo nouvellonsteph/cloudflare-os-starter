@@ -20,17 +20,17 @@ afterEach(() => vi.unstubAllGlobals());
 // exposing it to matcher introspection, and assert on the ordinary promise it resolves/rejects.
 async function rpcResult<T>(result: PromiseLike<T>): Promise<T> { return await result; }
 
-async function connected() {
+async function connected(identity = owner) {
   const id = settings.BSPORT_ACCOUNTS.newUniqueId();
   const stub = settings.BSPORT_ACCOUNTS.get(id);
   await runInDurableObject(stub, (_instance, state) => {
-    state.storage.kv.put("owner", owner);
+    state.storage.kv.put("owner", identity);
     state.storage.kv.put("callback", entrypoints.TestCallback({}));
   });
   return { id: id.toString(), stub, user: entrypoints.BsportUser({ props: { accountId: id.toString() } }) };
 }
 
-describe("owner-only connection authority", () => {
+describe("approved connection authority", () => {
   it("embeds the official square logo for both vendor and account without network requests", async () => {
     const vendor = await entrypoints.GatekeeperVendor({}).describe();
     const { user } = await connected();
@@ -51,19 +51,79 @@ describe("owner-only connection authority", () => {
     await expect(rpcResult(vendor.connectAccount(entrypoints.TestCallback({}), { resourceUrlPatterns: [] }))).rejects.toThrow("Select");
   });
 
-  it("the same connected account is permitted, a second connection with the same key is not", async () => {
+  it("permits separate independently approved connections, not just the originating account", async () => {
     const fetcher = vi.fn(async () => Response.json(fixtures.customers));
     vi.stubGlobal("fetch", fetcher);
-    const first = await connected(); const second = await connected();
+    const first = await connected(); const second = await connected({ ...owner, email: "friend@example.com", subject: "friend-subject" });
     const values = subresources(42, "customers", [1]);
     const mine = await first.user.getVerifier(); const other = await second.user.getVerifier();
     expect(await mine.permits(first.id, values)).toBe(true);
+    expect(await other.permits(first.id, values)).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await second.user.revoke();
     expect(await other.permits(first.id, values)).toBe(false);
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     await first.user.revoke();
     expect(await mine.permits(first.id, values)).toBe(false);
     await expect(rpcResult(first.stub.assertLive())).rejects.toThrow("not authorized");
     await expect(rpcResult(first.user.reconnect())).rejects.toThrow("new bsport account");
+  });
+
+  it.each(["observer", "source"])("rejects unapproved, retargeted or revoked %s enrollments before probing bsport", async side => {
+    const source = await connected();
+    const observer = await connected({ ...owner, email: "friend@example.com", subject: "friend-subject" });
+    const target = side === "observer" ? observer : source;
+    const identity = side === "observer" ? { ...owner, email: "friend@example.com", subject: "friend-subject" } : owner;
+    const fetcher = vi.fn(async () => Response.json(fixtures.customers));
+    vi.stubGlobal("fetch", fetcher);
+    const verifier = await observer.user.getVerifier();
+    for (const change of [{ email: "stranger@example.com" }, { company: 43 }, { client: "other-client" }, { franchisor: "7" }, { issuer: "https://other.example" }, { audience: "other-audience" }]) {
+      await runInDurableObject(target.stub, (_instance, state) => { state.storage.kv.put("owner", { ...identity, ...change }); });
+      await expect(rpcResult(verifier.permits(source.id, subresources(42, "customers", [1])))).rejects.toThrow("not authorized");
+    }
+    await runInDurableObject(target.stub, (_instance, state) => { state.storage.kv.delete("owner"); });
+    await expect(rpcResult(verifier.permits(source.id, subresources(42)))).rejects.toThrow("not authorized");
+    await target.stub.revoke();
+    expect(await verifier.permits(source.id, subresources(42))).toBe(false);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("checks all reported records through the approved collaborator's verifier, including provider denial", async () => {
+    const source = await connected();
+    const observer = await connected({ ...owner, email: "friend@example.com", subject: "friend-subject" });
+    const verifier = await observer.user.getVerifier();
+    const values = [...subresources(42, "bookings", [1]), ...subresources(42, "customers", [1])];
+    const fetcher = vi.fn<typeof fetch>(async input => Response.json(String(input).includes("/clients/") ? fixtures.customers : fixtures.bookings));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await verifier.permits(source.id, values)).toBe(true);
+    expect(fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname).toSorted()).toEqual([
+      "/api/v2/management/bookings/1/", "/api/v2/management/clients/1/",
+    ]);
+    fetcher.mockImplementation(async input => String(input).includes("/clients/") ? new Response(null, { status: 403 }) : Response.json(fixtures.bookings));
+    expect(await verifier.permits(source.id, values)).toBe(false);
+    for (const invalid of [["global"], subresources(43)]) {
+      await expect(rpcResult(verifier.permits(source.id, invalid))).rejects.toThrow();
+    }
+  });
+
+  it.each([401, 429, 500, 503])("propagates indeterminate provider HTTP %s for separate approved connections", async status => {
+    const source = await connected();
+    const observer = await connected({ ...owner, email: "friend@example.com", subject: "friend-subject" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status })));
+    const verifier = await observer.user.getVerifier();
+    await expect(rpcResult(verifier.permits(source.id, subresources(42)))).rejects.toThrow(`HTTP ${status}`);
+  });
+
+  it.each(["observer", "source"])("does not grant if the %s is revoked during a collaborator's provider probe", async side => {
+    const source = await connected();
+    const observer = await connected({ ...owner, email: "friend@example.com", subject: "friend-subject" });
+    const target = side === "observer" ? observer : source;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      await settings.BSPORT_ACCOUNTS.get(settings.BSPORT_ACCOUNTS.idFromString(target.id)).revoke();
+      return Response.json({ results: [], next_page: null });
+    }));
+    const verifier = await observer.user.getVerifier();
+    await expect(rpcResult(verifier.permits(source.id, subresources(42)))).rejects.toThrow("not authorized");
   });
 
   it("refuses invalid subresources even for the originating account", async () => {
@@ -202,15 +262,15 @@ describe("owner-only connection authority", () => {
     });
   });
 
-  it("batches actual gatekeeper observer checks and never grants another connection", async () => {
+  it("batches actual gatekeeper observer checks across independently approved connections", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ results: [], next_page: null })));
-    const first = await connected(); const second = await connected();
+    const first = await connected(); const second = await connected({ ...owner, email: "friend@example.com", subject: "friend-subject" });
     await runInDurableObject(first.stub, async (_instance, state) => {
       const gatekeeper = state.facets.get<main.BsportGatekeeper>("observer-test", () => ({
         class: state.exports.BsportGatekeeper({ props: { accountId: first.id, resource: { company: 42, collection: "bookings" } } }),
       }));
       const observers = [{ id: "owner", verifier: state.exports.BsportVerifier({ props: { accountId: first.id } }) }, { id: "collaborator", verifier: state.exports.BsportVerifier({ props: { accountId: second.id } }) }];
-      expect(await gatekeeper.verifyObserverAccess(observers, subresources(42))).toEqual({ allowedObserverIds: ["owner"] });
+      expect(await gatekeeper.verifyObserverAccess(observers, subresources(42))).toEqual({ allowedObserverIds: ["owner", "collaborator"] });
       expect(await gatekeeper.getHistoricalSubresources()).toEqual([]);
       await gatekeeper.addObserver("collaborator", observers[1].verifier);
       await gatekeeper.removeObserver("collaborator");

@@ -99,10 +99,14 @@ export class BsportAccount extends DurableObject<BsportEnv> {
     this.ctx.storage.kv.put("owner", staged);
   }
 
-  /** The shared key is service authentication, never a collaborator entitlement. */
+  /** Independently enrolled accounts may verify the same deployment-pinned data. */
   async permits(expectedAccount: string, values: string[]): Promise<boolean> {
     validateSubresources(values, companyId(this.env));
-    if (!await this.sameConnection(expectedAccount)) return false;
+    // Each observer must have their own live, approved enrollment. A matching API key
+    // alone is not an entitlement. Both enrollments must still pin this deployment.
+    if (!await this.sameConnection(this.ctx.id.toString())) return false;
+    const source = expectedAccount === this.ctx.id.toString() ? this : account(this.env, expectedAccount);
+    if (!await source.sameConnection(expectedAccount)) return false;
     try {
       await new BsportClient(this.env).verifyAccess(values);
     } catch (error) {
@@ -111,6 +115,7 @@ export class BsportAccount extends DurableObject<BsportEnv> {
       throw error;
     }
     await this.assertLive();
+    await source.assertLive();
     return true;
   }
 
@@ -237,7 +242,7 @@ export class BsportGatekeeper extends DurableObject<BsportEnv, BindingProps> imp
 export class GatekeeperVendor extends WorkerEntrypoint<BsportEnv> {
   async describe(): Promise<VendorDescription> {
     return { displayName: "bsport", url: "https://bsport.io", logo: BSPORT_ICON, providesAuth: false,
-      tagline: "Private studio data, read-only", description: "Read bookings, classes, customers, subscriptions, passes and invoices. Only the deployment-approved owner can connect; sharing a workspace does not share these results." };
+      tagline: "Private studio data, read-only", description: "Read bookings, classes, customers, subscriptions, passes and invoices. Only deployment-approved users can connect; shared workspaces verify each user's access to the data." };
   }
   @skipRpcValidation()
   async connectAccount(callback: Fetcher<GatekeeperConnectCallback>, options?: GatekeeperConnectOptions): Promise<{ url: string }> {

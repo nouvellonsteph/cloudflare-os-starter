@@ -53,17 +53,20 @@ are provider content, not instructions to trust.
 - Every data-bearing read, including empty and terminal pages, authorizes an observation with
   `containsRestrictedData: true` and explicit canonical subresources: `environment/production/company/42`
   plus each disclosed record, e.g. `environment/production/company/42/bookings/123`.
-- `verifyObserverAccess()` permits only the originating connection with a live deployment-pinned
-  entitlement, and probes bsport detail access for every reported record (a one-row bookings query
-  for company-only requirements). Sharing a workspace or making another connection with the same
-  key does not qualify. `403`/`404` deny; `401`, rate limits, transport failures and outages propagate
-  as indeterminate failures. No verdict cache or legacy observer roster is kept.
+- `verifyObserverAccess()` accepts independently enrolled connections, not just the connection
+  that originally read the data. Both the source and observer must have a live entitlement pinned
+  to this deployment's company, client, franchisor and Access realm; the observer's verified email
+  must still be approved. A shared API key or a workspace invitation alone never qualifies.
+  Using the deployment-managed key, verification probes bsport detail access for every reported
+  record (a one-row bookings query for company-only requirements), then rechecks both enrollments
+  to catch revocation during the probe. `403`/`404` deny; `401`, rate limits, transport failures and
+  outages propagate as indeterminate failures. No verdict cache or legacy observer roster is kept.
 - Existing sessions and children recheck entitlement on reads, including after queue authorization.
   Removing the owner or an allow-listed email, changing tenant/client/franchisor or Access realm, or revoking the connection
   blocks old grants on their next use. Reconnect requires the original email and subject. Rotating
   the same company's key does not change entitlement; provider access is checked live.
 
-Private-only is not DLP: an authorized owner's agent can still reproduce data elsewhere. Existing
+Approved access is not DLP: an authorized user's agent can still reproduce data elsewhere. Existing
 copies cannot be erased by revoking this connector. Workshop stores disclosed data and its audit
 history under its own retention policy; this Worker has no durable provider-data cache.
 
@@ -109,7 +112,7 @@ new Worker version. Never paste the value in chat, a config, browser code, an RP
 command-line arguments, a log or Git. Confirm only the secret's name, not its value.
 
 Keep the connector disabled until an approved owner read, denied identity, separate connection,
-shared-workspace denial, reconnect and revocation have been verified against approved test data.
+approved shared-workspace access, unauthorized-user denial, reconnect and revocation have been verified against approved test data.
 Provider permissions and field compatibility have **not** been proven by synthetic tests. No API
 call or deployment is implied by a passing local check.
 
