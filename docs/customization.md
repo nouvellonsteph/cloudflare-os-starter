@@ -123,7 +123,7 @@ not itself configure build triggers or deploy-on-push automation.
 #### Sandbox Gatekeeper
 
 Select `gatekeepers.sandbox` to give users a private Linux workspace with an interactive
-terminal and file tree. The optional Worker uses Cloudflare Containers. An explicitly connected
+terminal and file tree. Users connect through Workshop’s account handoff from Connectors or a gadget’s connection picker. The optional Worker uses Cloudflare Containers. An explicitly connected
 gadget can read workspace files and request file writes or commands through Workshop.
 See the [Sandbox setup and verification guide](../packages/gatekeeper-sandbox/README.md).
 

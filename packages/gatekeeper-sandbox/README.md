@@ -23,10 +23,11 @@ are `lite`, `basic`, and `standard-1` through `standard-4`. Cloudflare bills for
 instance, including idle time before it stops. [Containers pricing](https://developers.cloudflare.com/containers/platform/pricing/) · [Instance sizes](https://developers.cloudflare.com/containers/platform/limits/)
 
 Run `pnpm cf-os check` for configuration and Worker bundle validation. After an operator-approved
-`pnpm cf-os deploy`, set the Sandbox policy to **Optional** in Workshop's `/admin`. Users can enable it
-in Connectors. Open **Sandbox** from Workshop's app navigation,
-then select **Open workspace** to start the container. Bind **Linux workspace** to a gadget
-when the agent needs access.
+`pnpm cf-os deploy`, connect Sandbox from **Connectors** or from a gadget's connection picker.
+Workshop opens an account-confirmation popup on its own origin. After connecting, open **Sandbox**
+from the app navigation and select **Open workspace** to start the container. Reload Workshop if the Sandbox navigation item is missing after connecting. Bind **Linux
+workspace** to a gadget when the agent needs access. An administrator can disable the Sandbox
+connector in Workshop's `/admin`.
 
 ## Use the workspace
 

@@ -217,6 +217,7 @@ test("preserves the private Sandbox container binding when its Gatekeeper is sel
   assert.equal(sandbox.name, "acme-gk-sandbox");
   assert.equal(sandbox.workers_dev, false);
   assert.equal(sandbox.preview_urls, false);
+  assert.ok(sandbox.compatibility_flags?.includes("allow_irrevocable_stub_storage"));
   assert.ok(!sandbox.routes?.length);
   assert.equal(sandbox.vars?.SANDBOX_INSTANCE_TYPE, "standard-3");
   assert.deepEqual(Reflect.get(sandbox, "containers"), [{

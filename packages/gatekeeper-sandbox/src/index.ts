@@ -313,20 +313,20 @@ export class GatekeeperVendor extends WorkerEntrypoint<SandboxEnv> {
       logo: ICON,
       tagline: "Work inside a private Linux workspace",
       description: "Open a terminal, manage files, and let a connected gadget request commands and edits.",
-      autoProvisionsAccount: true,
       providesAuth: false,
     };
   }
 
   async versionTag(): Promise<string | undefined> { return workerVersionTag(this.env); }
 
-  @skipRpcValidation()
-  async createAccount(): Promise<Fetcher<GatekeeperUser>> {
-    return this.ctx.exports.SandboxAccount({ props: { accountId: crypto.randomUUID() } });
-  }
-
-  async connectAccount(_callback: Fetcher<GatekeeperConnectCallback>, _options?: GatekeeperConnectOptions): Promise<{ url: string }> {
-    throw new Error("Sandbox is provisioned by Workshop.");
+  async connectAccount(callback: Fetcher<GatekeeperConnectCallback>, _options?: GatekeeperConnectOptions): Promise<{ url: string }> {
+    // Workshop stages the account for the initiating user and requires its one-time flow nonce
+    // when redeeming the ticket. With no external provider, the popup can open the handoff directly.
+    const account = this.ctx.exports.SandboxAccount({ props: { accountId: crypto.randomUUID() } });
+    const handoff = await callback.complete(account);
+    const url = new URL("/connect/handoff", handoff.targetOrigin);
+    url.hash = encodeURIComponent(handoff.ticket);
+    return { url: url.href };
   }
 
   async getSupportedResources(_options?: { userId?: string }): Promise<SupportedResource[]> { return [RESOURCE]; }

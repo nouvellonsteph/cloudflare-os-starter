@@ -42,7 +42,7 @@ approval before running it. `check` does not install credentials or prove live b
 
 The starter's optional `gatekeepers.sandbox` deploys the private Linux workspace Worker. Enable it
 in the Gatekeeper selection or add its Worker name in `deployment.jsonc`. It requires Workers Paid,
-Cloudflare Containers, and Docker to build its image. See the [Sandbox guide](../gatekeeper-sandbox/README.md).
+Cloudflare Containers, and Docker to build its image. The connector uses Workshop’s account handoff without provider credentials. See the [Sandbox guide](../gatekeeper-sandbox/README.md).
 
 ## Output and prompts
 
