@@ -114,22 +114,6 @@ describe("approved connection authority", () => {
     await expect(rpcResult(verifier.permits(source.id, subresources(42)))).rejects.toThrow(`HTTP ${status}`);
   });
 
-  it("paces live provider checks across concurrent collaborator verifications", async () => {
-    const source = await connected();
-    const observer = await connected({ ...owner, email: "friend@example.com", subject: "friend-subject" });
-    const verifiers = await Promise.all([source.user.getVerifier(), observer.user.getVerifier()]);
-    const requestTimes: number[] = [];
-    vi.stubGlobal("fetch", vi.fn(async () => {
-      requestTimes.push(Date.now());
-      return Response.json(fixtures.bookings);
-    }));
-    const values = subresources(42, "bookings", [1]);
-    expect(await Promise.all(verifiers.map(verifier => verifier.permits(source.id, values))))
-      .toEqual([true, true]);
-    expect(requestTimes).toHaveLength(2);
-    expect(requestTimes[1] - requestTimes[0]).toBeGreaterThanOrEqual(75);
-  });
-
   it.each(["observer", "source"])("does not grant if the %s is revoked during a collaborator's provider probe", async side => {
     const source = await connected();
     const observer = await connected({ ...owner, email: "friend@example.com", subject: "friend-subject" });

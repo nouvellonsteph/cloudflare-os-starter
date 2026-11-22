@@ -11,17 +11,14 @@ import { generateNonce, isLiveNonce, type TimedNonce } from "@gadgets/gatekeeper
 import { commitStagedCredentials, discardStagedCredentials, peekStagedCredentials, stageCredentials } from "@gadgets/gatekeeper-kit/credential-stage";
 import { companyId, ensureConfigured, isAllowedEmail, type BsportEnv } from "./env.js";
 import { verifyOwner, type OwnerIdentity } from "./identity.js";
-import { isCollection, parseResourceUrl, resourceType, resourceUrl, supportedResources, validateSubresources, type Collection, type Resource } from "./resources.js";
-import { BsportClient, BsportError, wait } from "./client.js";
+import { parseResourceUrl, resourceType, resourceUrl, supportedResources, validateSubresources, type Resource } from "./resources.js";
+import { BsportClient, BsportError } from "./client.js";
 import { ReadContext, sessionFor, type Session } from "./sessions.js";
 import TYPES from "./types.txt";
 import CONFIGURATOR from "./generated/bsport-configurator-ui.txt";
 import { BSPORT_ICON } from "./logo.js";
 
 const FLOW_TTL = 10 * 60 * 1000;
-const VERIFICATION_PACER = "verification-request-pacer";
-const VERIFICATION_REQUEST_INTERVAL_MS = 100;
-const MAX_VERIFICATION_QUEUE_MS = 5_000;
 type Props = { accountId: string };
 type BindingProps = Props & { resource: Resource };
 type Entitlement = OwnerIdentity & { company: number; client: string; franchisor: string | null; issuer: string; audience: string };
@@ -48,21 +45,6 @@ function validEntitlement(value: Entitlement | undefined, env: BsportEnv): value
 /** Per-connection identity, status and single-use handoff state. The API key never enters storage. */
 @validateRpc()
 export class BsportAccount extends DurableObject<BsportEnv> {
-  #nextVerificationRequest = new Map<Collection, number>();
-
-  /** The named pacer shares a request budget across this Worker deployment's verification calls. */
-  async reserveVerificationRequest(collection: string): Promise<number | null> {
-    if (this.ctx.id.name !== VERIFICATION_PACER || !isCollection(collection)) {
-      throw new Error("Invalid bsport verification request reservation.");
-    }
-    const now = Date.now();
-    const next = Math.max(now, this.#nextVerificationRequest.get(collection) ?? now);
-    const delay = next - now;
-    if (delay > MAX_VERIFICATION_QUEUE_MS) return null;
-    this.#nextVerificationRequest.set(collection, next + VERIFICATION_REQUEST_INTERVAL_MS);
-    return delay;
-  }
-
   @skipRpcValidation()
   async begin(callback: Fetcher<GatekeeperConnectCallback>): Promise<{ url: string }> {
     if (this.ctx.storage.kv.get("callback")) throw new Error("Connection already initialized.");
@@ -125,13 +107,8 @@ export class BsportAccount extends DurableObject<BsportEnv> {
     if (!await this.sameConnection(this.ctx.id.toString())) return false;
     const source = expectedAccount === this.ctx.id.toString() ? this : account(this.env, expectedAccount);
     if (!await source.sameConnection(expectedAccount)) return false;
-    const pacer = this.env.BSPORT_ACCOUNTS.getByName(VERIFICATION_PACER);
     try {
-      await new BsportClient(this.env, undefined, async collection => {
-        const delay = await pacer.reserveVerificationRequest(collection);
-        if (delay === null) throw new BsportError(429);
-        if (delay > 0) await wait(delay);
-      }).verifyAccess(values);
+      await new BsportClient(this.env).verifyAccess(values);
     } catch (error) {
       // Expired credentials (401), rate limits and outages are indeterminate and propagate.
       if (error instanceof BsportError && (error.status === 403 || error.status === 404)) return false;
