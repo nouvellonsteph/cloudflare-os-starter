@@ -19,9 +19,9 @@ catalog:
   # Exact, matching upstream's lock. The overrides below set its miniflare and wrangler anyway.
   '@cloudflare/vitest-plugin': 1.8.2
   '@cloudflare/workers-types': ^5.20261113.1
-  capnweb: ^0.12.0
+  capnweb: ^0.13.1
   # Exact: pinned in lockstep with capnweb (declared as a >=0.7.0 peer)
-  capnweb-validate: 0.3.0
+  capnweb-validate: 0.3.2
   # Exact: a prerelease, kept in step with the Wrangler/workerd stack the test pool runs on.
   miniflare: 5.20261113.0-beta
   # Exact: TypeScript 7 (tsgo). The submodule's tsconfig sets `singleThreaded`, which TS 5.9
